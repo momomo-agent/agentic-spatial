@@ -239,6 +239,24 @@ function postProcess(scene) {
     })
   }
 
+  // 4. Behaviors: filter out invalid entries
+  if (scene.behaviors) {
+    scene.behaviors = scene.behaviors.filter(b => b && b.type && b.description)
+  }
+
+  // 5. Changes: filter out invalid entries
+  if (scene.changes) {
+    scene.changes = scene.changes.filter(c => c && c.type && c.id && c.description)
+  }
+
+  // 6. People: ensure emotion/activity defaults
+  for (const p of (scene.people || [])) {
+    if (!p.emotion) p.emotion = 'neutral'
+    if (!p.activity) p.activity = 'idle'
+    if (!p.interactingWith) p.interactingWith = []
+    if (p.lookingAtCamera === undefined) p.lookingAtCamera = -1
+  }
+
   return scene
 }
 
@@ -532,7 +550,9 @@ CHANGE DETECTION — also include a "changes" array describing what changed:
 - "moved": person/object changed position significantly (>0.1 in normalized coords)
 - "pose_changed": person changed pose (sitting→standing, etc.)
 - "gaze_changed": person changed gaze direction or lookingAtCamera status
-- "behavior_changed": activity type changed
+- "emotion_changed": person's emotional state changed
+- "activity_changed": person's activity changed  
+- "behavior_changed": group behavior type changed
 
 Each change entry: { type, id, description, from, to }
 
