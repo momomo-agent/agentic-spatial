@@ -72,6 +72,10 @@ const SCENE_SCHEMA = {
           lookingAtCamera: { type: 'number', description: 'Camera index (0-based) the person is looking at, or -1 if not looking at any camera' },
           clothing: { type: 'string' },
           pose: { type: 'string', enum: ['sitting', 'standing', 'leaning'] },
+          emotion: { type: 'string', description: 'Detected emotional state: neutral|happy|focused|bored|confused|surprised|anxious|sad|angry|excited|contemplative' },
+          emotionConfidence: { type: 'number', description: '0-1 confidence in emotion detection' },
+          activity: { type: 'string', description: 'What this person is doing: typing|reading|talking|listening|presenting|writing|watching|walking|eating|phone_use|vr_use|idle' },
+          interactingWith: { type: 'array', items: { type: 'string' }, description: 'IDs of other people this person is interacting with' },
           seenIn: { type: 'array', items: { type: 'number' } }
         }
       }
@@ -156,6 +160,10 @@ RECONSTRUCTION ORDER:
    - x, y, z: 0-1
    - gazeDegrees, gazeTarget, clothing, pose (sitting|standing|leaning), seenIn
    - lookingAtCamera: which camera index (0-based) the person is directly looking at. Judge by their eye/face direction in the photo — if they are facing toward the camera position, set the camera index. Set -1 if they are not looking at any camera.
+   - emotion: detected emotional state from facial expression and body language (neutral|happy|focused|bored|confused|surprised|anxious|sad|angry|excited|contemplative)
+   - emotionConfidence: 0-1 how confident you are in the emotion reading
+   - activity: what this person is actively doing (typing|reading|talking|listening|presenting|writing|watching|walking|eating|phone_use|vr_use|idle)
+   - interactingWith: [person ids] — other people this person is directly interacting with (face-to-face conversation, collaborative work, etc.)
 
 RELATIONS: Spatial strings referencing zones/anchors.
 CAMERAS: index, estimatedPosition {x, z}, fovDegrees.
@@ -337,6 +345,10 @@ function ensembleMerge(runs) {
       out.gazeDegrees = +median(items.map(i => i.gazeDegrees || 0)).toFixed(0)
       out.gazeTarget = mostCommon(items.map(i => i.gazeTarget))
       out.lookingAtCamera = +median(items.map(i => i.lookingAtCamera ?? -1)).toFixed(0)
+      out.emotion = mostCommon(items.map(i => i.emotion))
+      out.emotionConfidence = +median(items.map(i => i.emotionConfidence || 0.5)).toFixed(2)
+      out.activity = mostCommon(items.map(i => i.activity))
+      out.interactingWith = [...new Set(items.flatMap(i => i.interactingWith || []))]
       out.zone = mostCommon(items.map(i => i.zone))
       out.anchorRef = mostCommon(items.map(i => i.anchorRef))
     }
