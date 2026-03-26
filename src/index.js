@@ -1,7 +1,11 @@
-// spatial-kit/src/index.js — Core library for spatial reconstruction from photos
+// agentic-spatial/src/index.js — Core library for spatial reconstruction from photos
 // Uses agentic-core's agenticAsk for VLM calls with vision
 
-import { agenticAsk } from '../../agentic-core/docs/agentic-agent.js'
+const IS_BROWSER = typeof window !== 'undefined'
+const AGENTIC_CORE_CDN = 'https://momomo-agent.github.io/agentic-core/agentic-agent.js'
+const AGENTIC_CORE_LOCAL = '../../agentic-core/docs/agentic-agent.js'
+
+const { agenticAsk } = await import(IS_BROWSER ? AGENTIC_CORE_CDN : AGENTIC_CORE_LOCAL)
 
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514'
 
