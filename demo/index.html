@@ -443,18 +443,35 @@ function renderScene(data) {
     meshMap.set(obj.id, mesh)
 
     // Label sprite
-    addLabel(obj.name || obj.id, px, py + oh + 0.3, pz)
+    addLabel(obj.name || obj.label || obj.id, px, py + oh + 0.3, pz)
   }
 
-  // People
+  // People — spread overlapping positions
+  const peoplePositions = []
   for (const p of data.people || []) {
-    const px = (p.x || 0.5) * W
-    const pz = (p.z || 0.5) * D
+    let px = (p.x || 0.5) * W
+    let pz = (p.z || 0.5) * D
+    // Jitter if too close to existing person
+    const MIN_DIST = 0.4
+    let attempts = 0
+    while (attempts < 20) {
+      const tooClose = peoplePositions.some(([ox, oz]) => Math.hypot(px - ox, pz - oz) < MIN_DIST)
+      if (!tooClose) break
+      const angle = Math.random() * Math.PI * 2
+      const dist = MIN_DIST + Math.random() * 0.2
+      px = (p.x || 0.5) * W + Math.cos(angle) * dist
+      pz = (p.z || 0.5) * D + Math.sin(angle) * dist
+      // Clamp to room
+      px = Math.max(0.2, Math.min(W - 0.2, px))
+      pz = Math.max(0.2, Math.min(D - 0.2, pz))
+      attempts++
+    }
+    peoplePositions.push([px, pz])
     const py = (p.y || 0) * H
     const isStanding = (p.pose || '').toLowerCase().includes('stand')
-    const ph = isStanding ? 0.9 : 0.6
+    const ph = isStanding ? 0.7 : 0.45
 
-    const coneGeo = new THREE.ConeGeometry(0.15, ph, 8)
+    const coneGeo = new THREE.ConeGeometry(0.1, ph, 8)
     const coneMat = new THREE.MeshStandardMaterial({ color: 0x4dc9f6, roughness: 0.5, transparent: true, opacity: 0.8 })
     const cone = new THREE.Mesh(coneGeo, coneMat)
     cone.position.set(px, py + ph / 2, pz)
@@ -584,7 +601,12 @@ function populateInspector(data) {
     <div class="detail-row"><span class="detail-key">Shape</span><span class="detail-val">${room.shape || '—'}</span></div>
     <div class="detail-row"><span class="detail-key">Width</span><span class="detail-val">${room.estimatedWidth || '?'}m</span></div>
     <div class="detail-row"><span class="detail-key">Depth</span><span class="detail-val">${room.estimatedDepth || '?'}m</span></div>
-    ${(room.walls || []).map(w => `<div class="detail-row"><span class="detail-key">${w.side || w.direction || w.name || '—'}</span><span class="detail-val">${(w.features || w.description || []).join ? (w.features || []).join(', ') : (w.features || w.description || '—')}</span></div>`).join('')}
+    ${(room.walls || []).map(w => {
+      if (typeof w === 'string') return `<div class="detail-row"><span class="detail-val">${w}</span></div>`
+      const key = w.side || w.direction || w.name || w.wall || Object.keys(w)[0] || '—'
+      const val = w.features || w.description || w.details || (typeof Object.values(w)[1] === 'string' ? Object.values(w)[1] : '—')
+      return `<div class="detail-row"><span class="detail-key">${key}</span><span class="detail-val">${Array.isArray(val) ? val.join(', ') : val}</span></div>`
+    }).join('')}
   `
 
   // Objects
@@ -594,7 +616,7 @@ function populateInspector(data) {
     const item = document.createElement('div')
     item.className = 'obj-item'
     item.dataset.id = obj.id
-    item.innerHTML = `<span class="obj-dot" style="background:${obj.color || '#4488aa'}"></span><span class="obj-name">${(obj.name || obj.id).replace(/_/g, ' ')}</span><span class="obj-type">${obj.type || ''}</span>`
+    item.innerHTML = `<span class="obj-dot" style="background:${obj.color || '#4488aa'}"></span><span class="obj-name">${(obj.name || obj.label || obj.description || obj.id).replace(/_/g, ' ')}</span><span class="obj-type">${obj.type || obj.category || ''}</span>`
     item.addEventListener('click', () => selectItem(obj.id))
     ol.appendChild(item)
   }

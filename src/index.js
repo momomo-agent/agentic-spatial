@@ -22,12 +22,58 @@ const SCENE_SCHEMA = {
         shape: { type: 'string' },
         estimatedWidth: { type: 'number' },
         estimatedDepth: { type: 'number' },
-        walls: { type: 'array' }
+        walls: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['side', 'features'],
+            properties: {
+              side: { type: 'string', description: 'Wall name: north, south, east, west, etc.' },
+              features: { type: 'string', description: 'Description of what is on this wall' }
+            }
+          }
+        }
       }
     },
-    objects: { type: 'array' },
-    people: { type: 'array' },
-    relations: { type: 'array' },
+    objects: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'name', 'type', 'x', 'y', 'z'],
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string', description: 'Descriptive name like "conference table", "whiteboard", "laptop"' },
+          type: { type: 'string', enum: ['furniture', 'electronics', 'decoration', 'appliance'] },
+          x: { type: 'number', description: '0-1 normalized, left to right' },
+          y: { type: 'number', description: '0-1 normalized, floor to ceiling' },
+          z: { type: 'number', description: '0-1 normalized, front to back' },
+          width: { type: 'number' },
+          depth: { type: 'number' },
+          color: { type: 'string' },
+          confidence: { type: 'number' },
+          seenIn: { type: 'array', items: { type: 'number' } }
+        }
+      }
+    },
+    people: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'x', 'y', 'z', 'pose'],
+        properties: {
+          id: { type: 'string' },
+          x: { type: 'number' },
+          y: { type: 'number' },
+          z: { type: 'number' },
+          gazeDegrees: { type: 'number', description: '0=north, 90=east, 180=south, 270=west' },
+          gazeTarget: { type: 'string' },
+          clothing: { type: 'string' },
+          pose: { type: 'string', enum: ['sitting', 'standing', 'leaning'] },
+          seenIn: { type: 'array', items: { type: 'number' } }
+        }
+      }
+    },
+    relations: { type: 'array', items: { type: 'string' } },
     cameras: { type: 'array' }
   }
 }
@@ -100,13 +146,19 @@ Merge all observations into one coherent spatial model:
    - estimatedPosition {x, z} in normalized coords
    - fovDegrees
 
+6. **Walls**: Each wall must have a "side" (e.g. "north", "south", "east", "west") and "features" (string description of what's on it).
+
 Types for objects: furniture, electronics, decoration, appliance
 People are separate from objects.
 
 Object IDs: obj_1, obj_2, etc.
 People IDs: person_1, person_2, etc.
+Object names: use descriptive names like "conference table", "whiteboard", "laptop", NOT generic "obj 1".
 
-CRITICAL: Place objects and people so they make spatial sense — objects on tables should have appropriate y values, people sitting in chairs should be near chairs, etc.`
+CRITICAL POSITIONING RULES:
+- Place objects and people so they make spatial sense — objects on tables should have appropriate y values, people sitting in chairs should be near chairs.
+- SPREAD PEOPLE OUT: If multiple people are sitting around a table, distribute them along the table edges. Each person must have DISTINCT x,z coordinates with at least 0.05 separation. Do NOT cluster everyone at the same x,z position.
+- Example: 6 people around a rectangular table should be placed at 3 positions along each long side, spaced evenly.`
 }
 
 // ── Main Export ──
