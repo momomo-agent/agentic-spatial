@@ -4,7 +4,6 @@
 import { agenticAsk } from '../../agentic-core/docs/agentic-agent.js'
 
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514'
-const PROXY_URL = 'http://127.0.0.1:7890'
 
 // ── Output Schema ──
 
@@ -115,8 +114,7 @@ export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUr
   const startTime = Date.now()
   const mdl = model || DEFAULT_MODEL
   const base = baseUrl || 'https://api.anthropic.com'
-  const isBrowser = typeof window !== 'undefined'
-  const proxy = isBrowser ? undefined : (proxyUrl || PROXY_URL)
+  const proxy = proxyUrl || undefined
   const provider = base.includes('anthropic.com') ? 'anthropic' : 'openai'
   const progress = onProgress || (() => {})
 
