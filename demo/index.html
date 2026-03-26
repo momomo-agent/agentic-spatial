@@ -263,6 +263,28 @@ function animate() {
 }
 animate()
 
+// ── LocalStorage persistence ──
+const LS_KEY = 'agentic-spatial-config'
+const configFields = ['api-key', 'model-input', 'base-url']
+
+function loadConfig() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}')
+    for (const id of configFields) {
+      if (saved[id]) document.getElementById(id).value = saved[id]
+    }
+  } catch {}
+}
+
+function saveConfig() {
+  const cfg = {}
+  for (const id of configFields) cfg[id] = document.getElementById(id).value
+  localStorage.setItem(LS_KEY, JSON.stringify(cfg))
+}
+
+loadConfig()
+configFields.forEach(id => document.getElementById(id).addEventListener('input', saveConfig))
+
 // ── Image Handling ──
 const dropzone = document.getElementById('dropzone')
 const fileInput = document.getElementById('file-input')
