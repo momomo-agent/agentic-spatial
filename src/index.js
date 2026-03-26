@@ -77,7 +77,41 @@ const SCENE_SCHEMA = {
       }
     },
     relations: { type: 'array', items: { type: 'string' } },
-    cameras: { type: 'array' }
+    cameras: { type: 'array' },
+    behaviors: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['type'],
+        properties: {
+          type: { type: 'string', description: 'meeting|presenting|solo_work|conversation|idle|moving|aware_of_camera' },
+          participants: { type: 'array', items: { type: 'string' }, description: 'person ids involved' },
+          focus: { type: 'string', description: 'anchor/object id that is the focus of this activity' },
+          description: { type: 'string' }
+        }
+      }
+    },
+    attentionMap: {
+      type: 'object',
+      description: 'Map of object/anchor id → array of person ids looking at it'
+    },
+    coverage: {
+      type: 'object',
+      properties: {
+        cameras: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              index: { type: 'number' },
+              visiblePeople: { type: 'array', items: { type: 'string' } },
+              occludedPeople: { type: 'array', items: { type: 'string' } }
+            }
+          }
+        },
+        blindSpots: { type: 'array', items: { type: 'string' }, description: 'Areas not visible from any camera' }
+      }
+    }
   }
 }
 
@@ -125,6 +159,19 @@ RECONSTRUCTION ORDER:
 
 RELATIONS: Spatial strings referencing zones/anchors.
 CAMERAS: index, estimatedPosition {x, z}, fovDegrees.
+
+4. BEHAVIORS: High-level activity recognition. Each behavior:
+   - type: meeting|presenting|solo_work|conversation|idle|moving|aware_of_camera
+   - participants: [person ids involved]
+   - focus: anchor/object id that is the activity's focal point (if any)
+   - description: one-line natural language description
+
+5. ATTENTION MAP: Object/anchor → who's looking at it.
+   Map each object that someone is gazing at to the list of person ids.
+
+6. COVERAGE: Camera visibility analysis.
+   - For each camera: which people are visible (visiblePeople) vs occluded by objects/other people (occludedPeople)
+   - blindSpots: areas of the room not covered by any camera
 
 RULES:
 - Zone is a LABEL for reasoning, not a hard coordinate constraint. Place items where they actually are.
@@ -447,4 +494,191 @@ export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUr
 
   progress('done', { scene })
   return scene
+}
+
+// ── Continuous Mode: SpatialSession ──
+
+function buildUpdatePrompt(prevScene, imageCount) {
+  const prevSummary = JSON.stringify({
+    room: prevScene.room,
+    anchors: (prevScene.anchors || []).map(a => ({ id: a.id, x: a.x, z: a.z })),
+    objects: (prevScene.objects || []).map(o => ({ id: o.id, name: o.name, type: o.type, x: o.x, z: o.z })),
+    people: (prevScene.people || []).map(p => ({ id: p.id, x: p.x, z: p.z, pose: p.pose, lookingAtCamera: p.lookingAtCamera })),
+    behaviors: prevScene.behaviors || []
+  })
+
+  return `You are analyzing ${imageCount} NEW photo(s) of the SAME room you analyzed before.
+
+PREVIOUS STATE (your last analysis):
+${prevSummary}
+
+TASK: Compare new photos with previous state. Output a FULL updated scene JSON with ALL fields.
+
+CHANGE DETECTION — also include a "changes" array describing what changed:
+- "appeared": person/object newly visible (wasn't in previous state)
+- "disappeared": person/object no longer visible
+- "moved": person/object changed position significantly (>0.1 in normalized coords)
+- "pose_changed": person changed pose (sitting→standing, etc.)
+- "gaze_changed": person changed gaze direction or lookingAtCamera status
+- "behavior_changed": activity type changed
+
+Each change entry: { type, id, description, from, to }
+
+RULES:
+- Keep IDs STABLE: if person_N_1 was at (0.3, 0.2) and someone is still near there, keep the same ID.
+- Only change an ID if the person is clearly different (different clothing, position too far from previous).
+- Room structure and anchors should be kept from previous state unless clearly wrong.
+- Coordinates: normalized 0-1. x: left→right, y: floor→ceiling, z: front→back.
+- Include ALL standard fields: room, anchors, objects, people, relations, cameras, behaviors, attentionMap, coverage.
+- Add "changes" array at top level.`
+}
+
+export class SpatialSession {
+  constructor({ apiKey, model, baseUrl, proxyUrl, ensemble, onProgress }) {
+    this.config = { apiKey, model, baseUrl, proxyUrl, ensemble }
+    this.onProgress = onProgress || (() => {})
+    this.state = null       // current scene
+    this.frameCount = 0
+    this.history = []       // array of { timestamp, scene, changes }
+  }
+
+  // First analysis or full reset
+  async analyze(images) {
+    this.frameCount++
+    const scene = await reconstructSpace({
+      ...this.config,
+      images,
+      onProgress: this.onProgress
+    })
+    this.state = scene
+    this.history.push({
+      frame: this.frameCount,
+      timestamp: Date.now(),
+      scene,
+      changes: []
+    })
+    return scene
+  }
+
+  // Incremental update with new photos
+  async update(images) {
+    if (!this.state) return this.analyze(images)
+
+    this.frameCount++
+    const progress = this.onProgress
+    const startTime = Date.now()
+    const { apiKey, model, baseUrl, proxyUrl } = this.config
+    const mdl = model || DEFAULT_MODEL
+    const base = baseUrl || 'https://api.anthropic.com'
+    const proxy = proxyUrl || undefined
+    const provider = base.includes('anthropic.com') ? 'anthropic' : 'openai'
+
+    progress('update_start', { frame: this.frameCount, imageCount: images.length })
+
+    const visionImages = images.map(img => ({
+      data: img.data,
+      media_type: img.media_type || 'image/jpeg'
+    }))
+
+    const updatePrompt = buildUpdatePrompt(this.state, images.length)
+    const schemaWithChanges = {
+      ...SCENE_SCHEMA,
+      properties: {
+        ...SCENE_SCHEMA.properties,
+        changes: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['type', 'id', 'description'],
+            properties: {
+              type: { type: 'string', enum: ['appeared', 'disappeared', 'moved', 'pose_changed', 'gaze_changed', 'behavior_changed'] },
+              id: { type: 'string' },
+              description: { type: 'string' },
+              from: { type: 'string' },
+              to: { type: 'string' }
+            }
+          }
+        }
+      }
+    }
+
+    const result = await agenticAsk(
+      updatePrompt,
+      {
+        provider, apiKey, model: mdl, baseUrl: base, proxyUrl: proxy,
+        tools: [], stream: false,
+        schema: schemaWithChanges,
+        systemPrompt: `You must respond with valid JSON. Output ONLY JSON, no markdown, no code fences.`,
+        images: visionImages
+      },
+      (type, data) => {
+        if (type === 'status') progress('update_status', data)
+      }
+    )
+
+    const newScene = postProcess(result.data)
+    const changes = newScene.changes || []
+
+    // Stabilize IDs: match new people to previous by proximity
+    if (this.state.people?.length && newScene.people?.length) {
+      const prevPeople = this.state.people
+      for (const np of newScene.people) {
+        let bestDist = Infinity, bestPrev = null
+        for (const pp of prevPeople) {
+          const dx = (np.x || 0) - (pp.x || 0)
+          const dz = (np.z || 0) - (pp.z || 0)
+          const dist = Math.sqrt(dx * dx + dz * dz)
+          if (dist < bestDist) { bestDist = dist; bestPrev = pp }
+        }
+        // If close enough and same pose type, keep the old ID
+        if (bestDist < 0.15 && bestPrev) {
+          np._prevId = bestPrev.id
+          if (np.id !== bestPrev.id) np.id = bestPrev.id
+        }
+      }
+    }
+
+    newScene.meta = {
+      model: mdl,
+      imageCount: images.length,
+      frame: this.frameCount,
+      elapsedMs: Date.now() - startTime,
+      changesDetected: changes.length
+    }
+
+    this.state = newScene
+    this.history.push({
+      frame: this.frameCount,
+      timestamp: Date.now(),
+      scene: newScene,
+      changes
+    })
+
+    progress('update_done', { scene: newScene, changes })
+    return newScene
+  }
+
+  // Get change summary between any two frames
+  getChanges(fromFrame, toFrame) {
+    const allChanges = []
+    for (const entry of this.history) {
+      if (entry.frame > fromFrame && entry.frame <= toFrame) {
+        allChanges.push(...entry.changes.map(c => ({ ...c, frame: entry.frame })))
+      }
+    }
+    return allChanges
+  }
+
+  // Get current state
+  getState() { return this.state }
+
+  // Get full history
+  getHistory() { return this.history }
+
+  // Reset session
+  reset() {
+    this.state = null
+    this.frameCount = 0
+    this.history = []
+  }
 }
