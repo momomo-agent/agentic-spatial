@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agentic-spatial — Spatial Behavior Intelligence</title>
+<meta name="description" content="Understand spaces, people, emotions, and behaviors from photos. Open-source spatial intelligence engine.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #08080c;
+  --surface: #101018;
+  --card: #14141f;
+  --border: rgba(255,255,255,0.06);
+  --text: #d8d8e4;
+  --text-dim: #6b6b80;
+  --accent: #5ce0d8;
+  --accent2: #8b6cf6;
+  --accent3: #f06292;
+  --serif: 'Instrument Serif', Georgia, serif;
+  --sans: 'DM Sans', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+html { scroll-behavior: smooth; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 15px; line-height: 1.6; overflow-x: hidden; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ── Grain overlay ── */
+body::after {
+  content: ''; position: fixed; inset: 0; z-index: 9999; pointer-events: none;
+  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+}
+
+/* ── Hero ── */
+.hero {
+  min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center;
+  text-align: center; padding: 60px 24px; position: relative;
+}
+.hero::before {
+  content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 800px; height: 800px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(92,224,216,0.06) 0%, rgba(139,108,246,0.03) 40%, transparent 70%);
+  pointer-events: none;
+}
+.hero-tag {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 24px; opacity: 0.8;
+}
+.hero h1 {
+  font-family: var(--serif); font-size: clamp(48px, 8vw, 96px); font-weight: 400;
+  line-height: 1.05; margin-bottom: 24px; color: #fff;
+}
+.hero h1 em { font-style: italic; color: var(--accent); }
+.hero-sub {
+  font-size: 18px; color: var(--text-dim); max-width: 560px; margin-bottom: 40px; line-height: 1.7;
+}
+.hero-actions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.btn {
+  padding: 12px 28px; border-radius: 6px; font-family: var(--sans); font-size: 14px; font-weight: 500;
+  border: none; cursor: pointer; transition: all 0.2s;
+}
+.btn-primary { background: var(--accent); color: #08080c; }
+.btn-primary:hover { background: #7aeae3; text-decoration: none; }
+.btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+.btn-ghost:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+
+/* ── Sections ── */
+section { padding: 100px 24px; max-width: 1100px; margin: 0 auto; }
+.section-tag {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase;
+  color: var(--accent2); margin-bottom: 12px;
+}
+section h2 {
+  font-family: var(--serif); font-size: clamp(32px, 5vw, 56px); font-weight: 400;
+  color: #fff; margin-bottom: 16px; line-height: 1.15;
+}
+section .lead { font-size: 16px; color: var(--text-dim); max-width: 600px; margin-bottom: 48px; }
+
+/* ── Schema showcase ── */
+.schema-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2px;
+  background: var(--border); border-radius: 12px; overflow: hidden;
+}
+.schema-card {
+  background: var(--card); padding: 32px;
+}
+.schema-card h3 {
+  font-size: 14px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+}
+.schema-card .icon { font-size: 20px; }
+.schema-field {
+  font-family: var(--mono); font-size: 12px; color: var(--text-dim); padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+.schema-field:last-child { border-bottom: none; }
+.schema-field .key { color: var(--accent); }
+.schema-field .type { color: var(--accent2); margin-left: 4px; }
+
+/* ── Features ── */
+.features-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px;
+}
+.feature {
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 32px;
+  transition: border-color 0.2s;
+}
+.feature:hover { border-color: rgba(92,224,216,0.2); }
+.feature-icon { font-size: 28px; margin-bottom: 16px; }
+.feature h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; color: #fff; }
+.feature p { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+
+/* ── Code block ── */
+.code-block {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 24px; overflow-x: auto; font-family: var(--mono); font-size: 13px; line-height: 1.7;
+  color: var(--text-dim);
+}
+.code-block .kw { color: var(--accent2); }
+.code-block .str { color: var(--accent3); }
+.code-block .fn { color: var(--accent); }
+.code-block .cm { color: #555; }
+
+/* ── Stats ── */
+.stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 2px;
+  background: var(--border); border-radius: 12px; overflow: hidden; margin: 48px 0;
+}
+.stat {
+  background: var(--card); padding: 32px; text-align: center;
+}
+.stat-value {
+  font-family: var(--serif); font-size: 40px; color: #fff; line-height: 1;
+}
+.stat-label { font-size: 12px; color: var(--text-dim); margin-top: 8px; }
+
+/* ── Timeline ── */
+.timeline { position: relative; padding-left: 32px; }
+.timeline::before {
+  content: ''; position: absolute; left: 7px; top: 0; bottom: 0; width: 1px; background: var(--border);
+}
+.timeline-item { position: relative; margin-bottom: 32px; }
+.timeline-item::before {
+  content: ''; position: absolute; left: -29px; top: 6px; width: 9px; height: 9px;
+  border-radius: 50%; background: var(--accent); border: 2px solid var(--bg);
+}
+.timeline-time { font-family: var(--mono); font-size: 11px; color: var(--accent2); margin-bottom: 4px; }
+.timeline-event { font-size: 14px; color: var(--text); }
+.timeline-detail { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+/* ── Footer ── */
+footer {
+  text-align: center; padding: 60px 24px; color: var(--text-dim); font-size: 13px;
+  border-top: 1px solid var(--border);
+}
+footer a { color: var(--text-dim); }
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  .schema-grid { grid-template-columns: 1fr; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="hero-tag">agentic-spatial</div>
+  <h1>Understand spaces.<br><em>Feel</em> what's happening.</h1>
+  <p class="hero-sub">
+    Feed it photos. Get back structured intelligence — who's there, what they're doing, how they feel, and how the space is being used.
+  </p>
+  <div class="hero-actions">
+    <a href="demo/" class="btn btn-primary">Try the Demo</a>
+    <a href="https://github.com/momomo-agent/agentic-spatial" class="btn btn-ghost">GitHub</a>
+  </div>
+</div>
+
+<!-- What it outputs -->
+<section>
+  <div class="section-tag">Output Schema</div>
+  <h2>One call. Full spatial intelligence.</h2>
+  <p class="lead">Every person, object, emotion, behavior, and camera relationship — structured, queryable, trackable.</p>
+
+  <div class="schema-grid">
+    <div class="schema-card">
+      <h3><span class="icon">👤</span> People</h3>
+      <div class="schema-field"><span class="key">position</span> <span class="type">x, y, z</span></div>
+      <div class="schema-field"><span class="key">pose</span> <span class="type">sitting | standing | leaning</span></div>
+      <div class="schema-field"><span class="key">emotion</span> <span class="type">happy | focused | sad | contemplative | …</span></div>
+      <div class="schema-field"><span class="key">activity</span> <span class="type">typing | talking | presenting | idle | …</span></div>
+      <div class="schema-field"><span class="key">gazeDegrees</span> <span class="type">0-360°</span></div>
+      <div class="schema-field"><span class="key">lookingAtCamera</span> <span class="type">camera index | -1</span></div>
+      <div class="schema-field"><span class="key">interactingWith</span> <span class="type">[person ids]</span></div>
+    </div>
+    <div class="schema-card">
+      <h3><span class="icon">🎬</span> Behaviors</h3>
+      <div class="schema-field"><span class="key">type</span> <span class="type">meeting | presenting | solo_work | …</span></div>
+      <div class="schema-field"><span class="key">participants</span> <span class="type">[person ids]</span></div>
+      <div class="schema-field"><span class="key">focus</span> <span class="type">object/anchor id</span></div>
+      <div class="schema-field"><span class="key">description</span> <span class="type">natural language</span></div>
+    </div>
+    <div class="schema-card">
+      <h3><span class="icon">👁</span> Attention Map</h3>
+      <div class="schema-field"><span class="key">object_id</span> <span class="type">→ [person ids looking at it]</span></div>
+      <div class="schema-field" style="color:var(--text-dim);font-family:var(--sans);font-size:12px;padding-top:8px">
+        Know where collective attention flows. Which screen draws eyes. Who's disengaged.
+      </div>
+    </div>
+    <div class="schema-card">
+      <h3><span class="icon">📹</span> Coverage</h3>
+      <div class="schema-field"><span class="key">camera[i].visiblePeople</span> <span class="type">[ids]</span></div>
+      <div class="schema-field"><span class="key">camera[i].occludedPeople</span> <span class="type">[ids]</span></div>
+      <div class="schema-field"><span class="key">blindSpots</span> <span class="type">[area descriptions]</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- Stats -->
+<section>
+  <div class="section-tag">Performance</div>
+  <h2>Numbers.</h2>
+  <div class="stats">
+    <div class="stat"><div class="stat-value">60s</div><div class="stat-label">Single analysis</div></div>
+    <div class="stat"><div class="stat-value">89%</div><div class="stat-label">Ensemble consistency</div></div>
+    <div class="stat"><div class="stat-value">95%</div><div class="stat-label">Quality score</div></div>
+    <div class="stat"><div class="stat-value">3.0%</div><div class="stat-label">Position deviation</div></div>
+  </div>
+</section>
+
+<!-- Features -->
+<section>
+  <div class="section-tag">Capabilities</div>
+  <h2>What it sees.</h2>
+  <p class="lead">More than geometry. It understands what's happening.</p>
+
+  <div class="features-grid">
+    <div class="feature">
+      <div class="feature-icon">🧠</div>
+      <h3>Emotion Detection</h3>
+      <p>Per-person emotional state from facial expression and body language. Tracks shifts over time — focused → contemplative → emotional.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🔄</div>
+      <h3>Continuous Mode</h3>
+      <p>Feed frames over time. Detects who appeared, disappeared, moved, changed pose, or shifted emotion. Stable ID tracking across frames.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">👥</div>
+      <h3>Social Graph</h3>
+      <p>Who's interacting with whom. Face-to-face conversations, group dynamics, isolated individuals. The invisible social map.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">⚓</div>
+      <h3>Anchor System</h3>
+      <p>Large objects anchor the spatial skeleton. Everything else is positioned relative to them. Consistent across runs.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🎯</div>
+      <h3>Ensemble Mode</h3>
+      <p>Run 3× parallel analyses, merge by coordinate matching. Median coordinates, majority vote. 89% cross-run consistency.</p>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">📹</div>
+      <h3>Camera Awareness</h3>
+      <p>Who's looking at which camera. Per-camera visibility analysis. Blind spot detection. Full coverage mapping.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Usage -->
+<section>
+  <div class="section-tag">Usage</div>
+  <h2>Two lines to start.</h2>
+
+  <div class="code-block">
+<span class="cm">// Single analysis</span>
+<span class="kw">import</span> { <span class="fn">reconstructSpace</span> } <span class="kw">from</span> <span class="str">'agentic-spatial'</span>
+
+<span class="kw">const</span> scene = <span class="kw">await</span> <span class="fn">reconstructSpace</span>({
+  images, apiKey, model: <span class="str">'claude-sonnet-4'</span>,
+  ensemble: <span class="str">3</span>  <span class="cm">// optional: 3× parallel for higher consistency</span>
+})
+
+scene.people     <span class="cm">// position, emotion, activity, gaze</span>
+scene.behaviors  <span class="cm">// meeting, presenting, solo_work</span>
+scene.coverage   <span class="cm">// camera visibility, blind spots</span>
+  </div>
+
+  <br>
+
+  <div class="code-block">
+<span class="cm">// Continuous mode — feed frames over time</span>
+<span class="kw">import</span> { <span class="fn">SpatialSession</span> } <span class="kw">from</span> <span class="str">'agentic-spatial'</span>
+
+<span class="kw">const</span> session = <span class="kw">new</span> <span class="fn">SpatialSession</span>({ apiKey })
+
+<span class="kw">await</span> session.<span class="fn">analyze</span>(initialImages)   <span class="cm">// first frame</span>
+<span class="kw">await</span> session.<span class="fn">update</span>(newImages)       <span class="cm">// detect changes</span>
+
+session.state.changes  <span class="cm">// appeared, disappeared, moved, emotion_changed</span>
+session.<span class="fn">getHistory</span>()   <span class="cm">// full timeline</span>
+  </div>
+</section>
+
+<!-- Real example -->
+<section>
+  <div class="section-tag">Real Output</div>
+  <h2>What continuous mode sees.</h2>
+  <p class="lead">4 frames from a VR experience video. Watch the narrative unfold.</p>
+
+  <div class="timeline">
+    <div class="timeline-item">
+      <div class="timeline-time">t = 0s</div>
+      <div class="timeline-event">Boy wearing VR headset, girl watching behind him</div>
+      <div class="timeline-detail">emotion: focused (VR boy), neutral (observer) · activity: vr_use, idle</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-time">t = 4s → 2 people appeared</div>
+      <div class="timeline-event">More kids gather around. Boy adjusts headset.</div>
+      <div class="timeline-detail">behavior: solo_work → group_observation · 5 changes detected</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-time">t = 8s → pose_changed, emotion_changed</div>
+      <div class="timeline-event">Boy removes VR headset. Eyes visible. Looks contemplative.</div>
+      <div class="timeline-detail">emotion: focused → contemplative · behavior: post_vr_transition · girl starts talking</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-time">t = 12s → emotion escalated</div>
+      <div class="timeline-event">Boy bows head, appears to cry. Others watch with empathy.</div>
+      <div class="timeline-detail">emotion: contemplative → emotional_reaction · behavior: empathetic_observation</div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <p>
+    <a href="https://github.com/momomo-agent/agentic-spatial">GitHub</a> ·
+    <a href="demo/">Demo</a> ·
+    Part of the <a href="https://momomo-agent.github.io/agentic/">agentic</a> ecosystem
+  </p>
+  <p style="margin-top: 8px; font-size: 11px;">Built by <a href="https://github.com/momomo-agent">momomo-agent</a></p>
+</footer>
+
+</body>
+</html>
