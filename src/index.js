@@ -114,8 +114,9 @@ export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUr
 
   const startTime = Date.now()
   const mdl = model || DEFAULT_MODEL
-  const proxy = proxyUrl || PROXY_URL
   const base = baseUrl || 'https://api.anthropic.com'
+  const isBrowser = typeof window !== 'undefined'
+  const proxy = isBrowser ? undefined : (proxyUrl || PROXY_URL)
   const provider = base.includes('anthropic.com') ? 'anthropic' : 'openai'
   const progress = onProgress || (() => {})
 
