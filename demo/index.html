@@ -24,7 +24,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 a { color: var(--accent); }
 
 /* Layout */
-#app { display: flex; height: 100vh; }
+#app { display: flex; height: 100vh; position: relative; }
 #left { width: 280px; border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
 #center { flex: 1; position: relative; }
 #right { width: 0; border-left: 1px solid var(--border); overflow-y: auto; overflow-x: hidden; transition: width 0.2s; flex-shrink: 0; }
@@ -140,6 +140,30 @@ a { color: var(--accent); }
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+
+/* Responsive: small screens */
+@media (max-width: 900px) {
+  #left { width: 220px; }
+  #right.open { width: 280px; }
+}
+@media (max-width: 700px) {
+  #app { flex-direction: column; }
+  #left { width: 100%; max-height: 200px; overflow-y: auto; border-right: none; border-bottom: 1px solid var(--border); flex-direction: row; flex-wrap: wrap; }
+  #left .panel-section { flex: 1; min-width: 140px; }
+  #center { min-height: 300px; }
+  #right { width: 100% !important; max-height: 40vh; border-left: none; border-top: 1px solid var(--border); }
+  #right.open { width: 100% !important; }
+}
+/* Overlay mode: when window is narrow but not phone-sized, overlay inspector on canvas */
+@media (min-width: 701px) and (max-width: 1100px) {
+  #right.open {
+    position: absolute;
+    right: 0; top: 0; bottom: 0;
+    z-index: 10;
+    background: var(--surface);
+    box-shadow: -4px 0 16px rgba(0,0,0,0.4);
+  }
+}
 </style>
 </head>
 <body>
