@@ -115,6 +115,8 @@ export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUr
   const startTime = Date.now()
   const mdl = model || DEFAULT_MODEL
   const proxy = proxyUrl || PROXY_URL
+  const base = baseUrl || 'https://api.anthropic.com'
+  const provider = base.includes('anthropic.com') ? 'anthropic' : 'openai'
   const progress = onProgress || (() => {})
 
   progress('start', { imageCount: images.length, model: mdl })
@@ -133,10 +135,10 @@ export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUr
   const step1Result = await agenticAsk(
     `${analysisPrompt}\n\nThe ${images.length} images are named: ${imageNames}. Analyze them all.`,
     {
-      provider: 'anthropic',
+      provider,
       apiKey,
       model: mdl,
-      baseUrl,
+      baseUrl: base,
       proxyUrl: proxy,
       tools: [],
       stream: false,
@@ -158,10 +160,10 @@ export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUr
   const step2Result = await agenticAsk(
     reconstructionPrompt,
     {
-      provider: 'anthropic',
+      provider,
       apiKey,
       model: mdl,
-      baseUrl,
+      baseUrl: base,
       proxyUrl: proxy,
       tools: [],
       stream: false,

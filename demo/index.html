@@ -156,13 +156,9 @@ a { color: var(--accent); }
     </div>
     <div class="panel-section">
       <div class="panel-label">Configuration</div>
-      <div class="field"><input id="api-key" type="password" placeholder="Anthropic API Key"></div>
-      <div class="field">
-        <select id="model-select">
-          <option value="claude-sonnet-4-20250514">claude-sonnet-4</option>
-          <option value="claude-haiku-4-5-20251001">claude-haiku-4.5</option>
-        </select>
-      </div>
+      <div class="field"><input id="base-url" type="text" placeholder="Base URL" value="https://api.anthropic.com"></div>
+      <div class="field"><input id="api-key" type="text" placeholder="API Key"></div>
+      <div class="field"><input id="model-input" type="text" placeholder="Model" value="claude-sonnet-4-20250514"></div>
       <button id="analyze-btn" disabled>Analyze</button>
       <button id="demo-btn" style="width:100%;padding:8px;background:transparent;color:var(--text-dim);border:1px solid var(--border-hi);border-radius:3px;font-family:var(--sans);font-size:12px;cursor:pointer;margin-top:6px">Load Demo Scene</button>
     </div>
@@ -307,9 +303,11 @@ dropzone.addEventListener('drop', (e) => { e.preventDefault(); dropzone.classLis
 fileInput.addEventListener('change', () => addFiles(fileInput.files))
 
 function updateBtn() {
-  analyzeBtn.disabled = !(loadedImages.length && document.getElementById('api-key').value.trim())
+  analyzeBtn.disabled = !(loadedImages.length && document.getElementById('api-key').value.trim() && document.getElementById('base-url').value.trim() && document.getElementById('model-input').value.trim())
 }
 document.getElementById('api-key').addEventListener('input', updateBtn)
+document.getElementById('base-url').addEventListener('input', updateBtn)
+document.getElementById('model-input').addEventListener('input', updateBtn)
 
 // ── Logging ──
 const logEl = document.getElementById('log')
@@ -324,7 +322,8 @@ function log(msg, cls = '') {
 // ── Analyze ──
 analyzeBtn.addEventListener('click', async () => {
   const apiKey = document.getElementById('api-key').value.trim()
-  const model = document.getElementById('model-select').value
+  const model = document.getElementById('model-input').value.trim()
+  const baseUrl = document.getElementById('base-url').value.trim()
   if (!loadedImages.length || !apiKey) return
 
   analyzeBtn.disabled = true
@@ -336,6 +335,7 @@ analyzeBtn.addEventListener('click', async () => {
       images: loadedImages,
       apiKey,
       model,
+      baseUrl,
       onProgress: (step, detail) => {
         if (step === 'step1') log(detail.message, 'active')
         else if (step === 'step1_done') log(`Analysis complete (${detail.length} chars)`)
