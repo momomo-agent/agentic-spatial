@@ -69,6 +69,7 @@ const SCENE_SCHEMA = {
           x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' },
           gazeDegrees: { type: 'number' },
           gazeTarget: { type: 'string' },
+          lookingAtCamera: { type: 'number', description: 'Camera index (0-based) the person is looking at, or -1 if not looking at any camera' },
           clothing: { type: 'string' },
           pose: { type: 'string', enum: ['sitting', 'standing', 'leaning'] },
           seenIn: { type: 'array', items: { type: 'number' } }
@@ -120,6 +121,7 @@ RECONSTRUCTION ORDER:
    - zone, anchorRef
    - x, y, z: 0-1
    - gazeDegrees, gazeTarget, clothing, pose (sitting|standing|leaning), seenIn
+   - lookingAtCamera: which camera index (0-based) the person is directly looking at. Judge by their eye/face direction in the photo — if they are facing toward the camera position, set the camera index. Set -1 if they are not looking at any camera.
 
 RELATIONS: Spatial strings referencing zones/anchors.
 CAMERAS: index, estimatedPosition {x, z}, fovDegrees.
@@ -287,6 +289,7 @@ function ensembleMerge(runs) {
       out.clothing = items[0].clothing
       out.gazeDegrees = +median(items.map(i => i.gazeDegrees || 0)).toFixed(0)
       out.gazeTarget = mostCommon(items.map(i => i.gazeTarget))
+      out.lookingAtCamera = +median(items.map(i => i.lookingAtCamera ?? -1)).toFixed(0)
       out.zone = mostCommon(items.map(i => i.zone))
       out.anchorRef = mostCommon(items.map(i => i.anchorRef))
     }
