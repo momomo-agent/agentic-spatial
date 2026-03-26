@@ -374,6 +374,7 @@ analyzeBtn.addEventListener('click', async () => {
     renderScene(sceneData)
     populateInspector(sceneData)
     document.getElementById('right').classList.add('open')
+    document.querySelector('[data-view="inspector"]').classList.add('active')
     resize()
     log('Complete.')
   } catch (e) {
@@ -433,18 +434,13 @@ function renderScene(data) {
 
     const color = obj.color ? parseInt(obj.color.replace('#', ''), 16) : 0x4488aa
     const geo = new THREE.BoxGeometry(ow, oh, od)
-    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.1, transparent: true, opacity: 0.85 })
-    const mesh = new THREE.Mesh(geo, mat)
+    const edges = new THREE.EdgesGeometry(geo)
+    const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.7 })
+    const mesh = new THREE.LineSegments(edges, mat)
     mesh.position.set(px, py + oh / 2, pz)
     mesh.userData = { spatial: true, id: obj.id, type: 'object', data: obj }
     scene.add(mesh)
     meshMap.set(obj.id, mesh)
-
-    // Wireframe overlay
-    const wire = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.15 }))
-    wire.position.copy(mesh.position)
-    wire.userData.spatial = true
-    scene.add(wire)
 
     // Label sprite
     addLabel(obj.name || obj.id, px, py + oh + 0.3, pz)
@@ -636,8 +632,14 @@ document.querySelectorAll('.view-btn').forEach(btn => {
     const view = btn.dataset.view
     if (view === 'inspector') {
       const right = document.getElementById('right')
-      right.classList.toggle('open')
-      btn.classList.toggle('active')
+      const isOpen = right.classList.contains('open')
+      if (isOpen) {
+        right.classList.remove('open')
+        btn.classList.remove('active')
+      } else {
+        right.classList.add('open')
+        btn.classList.add('active')
+      }
       resize()
       return
     }
@@ -721,6 +723,7 @@ document.getElementById('demo-btn').addEventListener('click', () => {
   renderScene(sceneData)
   populateInspector(sceneData)
   document.getElementById('right').classList.add('open')
+  document.querySelector('[data-view="inspector"]').classList.add('active')
   resize()
   log(`Demo loaded: ${sceneData.objects.length} objects, ${sceneData.people.length} people`)
 })
