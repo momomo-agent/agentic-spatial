@@ -160,6 +160,10 @@ a { color: var(--accent); }
       <div class="field"><input id="model-input" type="text" placeholder="Model" value="claude-sonnet-4-20250514"></div>
       <div class="field"><input id="base-url" type="text" placeholder="Base URL" value="https://api.anthropic.com"></div>
       <div class="field"><input id="proxy-url" type="text" placeholder="Proxy URL (optional)" value="https://proxy.link2web.site"></div>
+      <div class="field" style="display:flex;align-items:center;gap:8px;margin:6px 0">
+        <input id="ensemble-toggle" type="checkbox" style="accent-color:var(--accent)">
+        <label for="ensemble-toggle" style="font-size:11px;color:var(--text-dim);cursor:pointer">Ensemble mode (3× parallel, higher consistency)</label>
+      </div>
       <button id="analyze-btn" disabled>Analyze</button>
       <button id="demo-btn" style="width:100%;padding:8px;background:transparent;color:var(--text-dim);border:1px solid var(--border-hi);border-radius:3px;font-family:var(--sans);font-size:12px;cursor:pointer;margin-top:6px">Load Demo Scene</button>
     </div>
@@ -348,6 +352,7 @@ analyzeBtn.addEventListener('click', async () => {
   const model = document.getElementById('model-input').value.trim()
   const baseUrl = document.getElementById('base-url').value.trim()
   const proxyUrl = document.getElementById('proxy-url').value.trim() || undefined
+  const ensemble = document.getElementById('ensemble-toggle').checked ? 3 : false
   if (!loadedImages.length || !apiKey) return
 
   analyzeBtn.disabled = true
@@ -361,11 +366,14 @@ analyzeBtn.addEventListener('click', async () => {
       model,
       baseUrl,
       proxyUrl,
+      ensemble,
       onProgress: (step, detail) => {
-        if (step === 'step1') log(detail.message, 'active')
-        else if (step === 'step1_done') log(`Analysis complete (${detail.length} chars)`)
-        else if (step === 'step2') log(detail.message, 'active')
-        else if (step === 'step2_status') log(detail.message)
+        if (step === 'start') log(`${detail.ensemble > 1 ? `Ensemble (${detail.ensemble}×)` : 'Single run'} — ${detail.model}`)
+        else if (step === 'step1') log(detail.message, 'active')
+        else if (step === 'ensemble') log(detail.message, 'active')
+        else if (step === 'ensemble_merge') log(detail.message, 'active')
+        else if (step === 'ensemble_partial') log(detail.message)
+        else if (step.match(/^run\d+_error$/)) log(`Run failed: ${detail.error}`, 'error')
         else if (step === 'done') log(`Done in ${(detail.scene.meta.elapsedMs / 1000).toFixed(1)}s`)
       }
     })
@@ -422,6 +430,28 @@ function renderScene(data) {
   floor.position.set(W / 2, 0, D / 2)
   floor.userData.spatial = true
   scene.add(floor)
+
+  // Anchors (render as slightly larger/brighter objects)
+  for (const obj of data.anchors || []) {
+    const px = (obj.x || 0.5) * W
+    const pz = (obj.z || 0.5) * D
+    const py = (obj.y || 0) * H
+    const ow = (obj.width || 0.15) * W
+    const od = (obj.depth || 0.15) * D
+    const oh = Math.min(ow, od) * 0.6
+
+    const color = obj.color ? parseInt(obj.color.replace('#', ''), 16) : 0x66aacc
+    const geo = new THREE.BoxGeometry(ow, oh, od)
+    const edges = new THREE.EdgesGeometry(geo)
+    const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 })
+    const mesh = new THREE.LineSegments(edges, mat)
+    mesh.position.set(px, py + oh / 2, pz)
+    mesh.userData = { spatial: true, id: obj.id, type: 'anchor', data: obj }
+    scene.add(mesh)
+    meshMap.set(obj.id, mesh)
+
+    addLabel(obj.name || obj.id, px, py + oh + 0.3, pz)
+  }
 
   // Objects
   for (const obj of data.objects || []) {
@@ -609,14 +639,15 @@ function populateInspector(data) {
     }).join('')}
   `
 
-  // Objects
+  // Anchors + Objects
   const ol = document.getElementById('object-list')
   ol.innerHTML = ''
-  for (const obj of data.objects || []) {
+  for (const obj of [...(data.anchors || []), ...(data.objects || [])]) {
+    const isAnchor = (data.anchors || []).includes(obj)
     const item = document.createElement('div')
     item.className = 'obj-item'
     item.dataset.id = obj.id
-    item.innerHTML = `<span class="obj-dot" style="background:${obj.color || '#4488aa'}"></span><span class="obj-name">${(obj.name || obj.label || obj.description || obj.id).replace(/_/g, ' ')}</span><span class="obj-type">${obj.type || obj.category || ''}</span>`
+    item.innerHTML = `<span class="obj-dot" style="background:${obj.color || '#4488aa'}${isAnchor ? ';border:1px solid var(--accent)' : ''}"></span><span class="obj-name">${isAnchor ? '⚓ ' : ''}${(obj.name || obj.label || obj.description || obj.id).replace(/_/g, ' ')}</span><span class="obj-type">${obj.type || obj.category || ''}</span>`
     item.addEventListener('click', () => selectItem(obj.id))
     ol.appendChild(item)
   }

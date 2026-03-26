@@ -1,5 +1,6 @@
 // agentic-spatial/src/index.js — Core library for spatial reconstruction from photos
 // Uses agentic-core's agenticAsk for VLM calls with vision
+// v7 soft-grid prompt + optional ensemble mode (3x parallel + merge)
 
 const IS_BROWSER = typeof window !== 'undefined'
 const AGENTIC_CORE_CDN = 'https://momomo-agent.github.io/agentic-core/agentic-agent.js'
@@ -13,11 +14,11 @@ const DEFAULT_MODEL = 'claude-sonnet-4-20250514'
 
 const SCENE_SCHEMA = {
   type: 'object',
-  required: ['room', 'objects', 'people', 'relations', 'cameras'],
+  required: ['room', 'anchors', 'objects', 'people', 'relations', 'cameras'],
   properties: {
     room: {
       type: 'object',
-      required: ['shape', 'estimatedWidth', 'estimatedDepth', 'walls'],
+      required: ['shape', 'estimatedWidth', 'estimatedDepth', 'walls', 'grid'],
       properties: {
         shape: { type: 'string' },
         estimatedWidth: { type: 'number' },
@@ -28,13 +29,15 @@ const SCENE_SCHEMA = {
             type: 'object',
             required: ['side', 'features'],
             properties: {
-              side: { type: 'string', description: 'Wall name: north, south, east, west, etc.' },
-              features: { type: 'string', description: 'Description of what is on this wall' }
+              side: { type: 'string' },
+              features: { type: 'string' }
             }
           }
-        }
+        },
+        grid: { type: 'object' }
       }
     },
+    anchors: { type: 'array' },
     objects: {
       type: 'array',
       items: {
@@ -42,13 +45,12 @@ const SCENE_SCHEMA = {
         required: ['id', 'name', 'type', 'x', 'y', 'z'],
         properties: {
           id: { type: 'string' },
-          name: { type: 'string', description: 'Descriptive name like "conference table", "whiteboard", "laptop"' },
+          name: { type: 'string' },
           type: { type: 'string', enum: ['furniture', 'electronics', 'decoration', 'appliance'] },
-          x: { type: 'number', description: '0-1 normalized, left to right' },
-          y: { type: 'number', description: '0-1 normalized, floor to ceiling' },
-          z: { type: 'number', description: '0-1 normalized, front to back' },
-          width: { type: 'number' },
-          depth: { type: 'number' },
+          zone: { type: 'string' },
+          anchorRef: { type: 'string' },
+          x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' },
+          width: { type: 'number' }, depth: { type: 'number' },
           color: { type: 'string' },
           confidence: { type: 'number' },
           seenIn: { type: 'array', items: { type: 'number' } }
@@ -62,10 +64,10 @@ const SCENE_SCHEMA = {
         required: ['id', 'x', 'y', 'z', 'pose'],
         properties: {
           id: { type: 'string' },
-          x: { type: 'number' },
-          y: { type: 'number' },
-          z: { type: 'number' },
-          gazeDegrees: { type: 'number', description: '0=north, 90=east, 180=south, 270=west' },
+          zone: { type: 'string' },
+          anchorRef: { type: 'string' },
+          x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' },
+          gazeDegrees: { type: 'number' },
           gazeTarget: { type: 'string' },
           clothing: { type: 'string' },
           pose: { type: 'string', enum: ['sitting', 'standing', 'leaning'] },
@@ -78,123 +80,294 @@ const SCENE_SCHEMA = {
   }
 }
 
-// ── Prompts ──
+// ── v7 Soft Grid + Anchor Prompt ──
 
-function buildAnalysisPrompt(imageCount) {
-  return `You are a spatial analysis expert. You are given ${imageCount} photo(s) taken from different camera positions in the same room/space.
+function buildPrompt(imageCount) {
+  return `Analyze these ${imageCount} photos of the same room taken from different angles. Output a unified 3D scene reconstruction as JSON.
 
-For EACH image, analyze:
+COORDINATE SYSTEM (normalized 0-1):
+- x: left(0) → right(1)
+- y: floor(0) → ceiling(1)  
+- z: front/north(0) → back/south(1)
+- "north" = wall the first camera faces (z=0 side)
 
-1. **Room structure**: Shape (rectangular, L-shaped, etc.), approximate dimensions in meters, wall features (doors, windows, whiteboards, screens).
+THINK IN ZONES, PLACE PRECISELY:
 
-2. **Objects**: Every significant object — furniture (tables, chairs, shelves), electronics (monitors, phones, projectors), decorations, appliances. For each:
-   - Name and type
-   - Approximate position in the room (left/center/right, near/far, floor/table/wall level)
-   - Approximate size
-   - Color/material
-   - Confidence level (how certain you are)
+First, mentally divide the room into a 3×3 grid:
+  NW (left-front)    N (center-front)    NE (right-front)
+  W  (left-middle)   C (center-middle)   E  (right-middle)
+  SW (left-back)     S (center-back)     SE (right-back)
 
-3. **People**: Every person visible. For each:
-   - Position in the room
-   - Body pose (sitting, standing, leaning)
-   - Gaze direction (which direction they face, and what they're looking at)
-   - Clothing description
-   - Confidence level
+Output room.grid describing what occupies each zone. This is your spatial map — use it to stay consistent.
 
-4. **Camera perspective**: Where this camera is positioned relative to the room (which corner/wall), approximate field of view.
+RECONSTRUCTION ORDER:
 
-5. **Cross-image correspondence**: If the same object or person appears in multiple images, note that explicitly. Use consistent naming.
+1. ANCHORS (2-4): The largest objects. Each needs:
+   - id: anchor_{type}_{zone} (e.g. anchor_table_C, anchor_whiteboard_N)
+   - name, type (table|board|door|cabinet|screen), zone
+   - x, y, z, width, depth: 0-1
+   - color: hex, confidence: 1.0, seenIn: [indices]
 
-Be extremely thorough. Describe spatial relationships precisely. Use cardinal directions (north/south/east/west) consistently — pick "north" as the wall the first camera faces.
+2. OBJECTS: Non-anchor items. Each needs:
+   - id: {type}_{zone}_{number} (e.g. laptop_N_1, chair_SW_2)
+   - name, type (furniture|electronics|decoration|appliance), zone
+   - anchorRef: nearest anchor id
+   - x, y, z, width, depth: 0-1
+   - color: hex, confidence: 0-1, seenIn: [indices]
 
-Respond with detailed analysis for each image, then a summary of the unified space.`
+3. PEOPLE: Each needs:
+   - id: person_{zone}_{number} (e.g. person_N_1, person_S_3)
+   - zone, anchorRef
+   - x, y, z: 0-1
+   - gazeDegrees, gazeTarget, clothing, pose (sitting|standing|leaning), seenIn
+
+RELATIONS: Spatial strings referencing zones/anchors.
+CAMERAS: index, estimatedPosition {x, z}, fovDegrees.
+
+RULES:
+- Zone is a LABEL for reasoning, not a hard coordinate constraint. Place items where they actually are.
+- IDs use zone labels for determinism: same object in same zone = same ID every time.
+- SPREAD people: ≥0.05 separation.
+- Objects ON a table: y ≈ table.y + 0.06.
+- Relations = plain strings, walls = {side, features}.
+- CONSISTENCY PRIORITY: If an object is near a zone boundary, always assign it to the zone where its CENTER falls. Anchor positions should be identical across any analysis of these images.`
 }
 
-function buildReconstructionPrompt(analysisText, imageCount) {
-  return `You are a spatial reconstruction system. Based on the per-image analysis below, produce a unified 3D scene reconstruction as JSON.
+// ── Post-processing ──
 
-## Per-Image Analysis
-${analysisText}
+function postProcess(scene) {
+  // 1. Clamp all coordinates to [0, 1]
+  const clamp = v => Math.max(0, Math.min(1, v || 0))
+  
+  for (const obj of (scene.objects || [])) {
+    obj.x = clamp(obj.x); obj.y = clamp(obj.y); obj.z = clamp(obj.z)
+    // Fallback name
+    if (!obj.name) obj.name = obj.id || 'unknown object'
+  }
+  
+  for (const anchor of (scene.anchors || [])) {
+    anchor.x = clamp(anchor.x); anchor.y = clamp(anchor.y); anchor.z = clamp(anchor.z)
+  }
 
-## Instructions
+  // 2. People: clamp + jitter to prevent overlap
+  const people = scene.people || []
+  for (const p of people) {
+    p.x = clamp(p.x); p.y = clamp(p.y); p.z = clamp(p.z)
+  }
 
-Merge all observations into one coherent spatial model:
+  const MIN_DIST = 0.05
+  for (let i = 0; i < people.length; i++) {
+    for (let j = i + 1; j < people.length; j++) {
+      const dx = people[j].x - people[i].x
+      const dz = people[j].z - people[i].z
+      const dist = Math.sqrt(dx * dx + dz * dz)
+      if (dist < MIN_DIST) {
+        const angle = Math.atan2(dz, dx) || (Math.random() * Math.PI * 2)
+        const push = (MIN_DIST - dist) / 2 + 0.01
+        people[j].x = clamp(people[j].x + Math.cos(angle) * push)
+        people[j].z = clamp(people[j].z + Math.sin(angle) * push)
+        people[i].x = clamp(people[i].x - Math.cos(angle) * push)
+        people[i].z = clamp(people[i].z - Math.sin(angle) * push)
+      }
+    }
+  }
 
-1. **Room**: Determine the room shape and dimensions in meters. List each wall and its features.
+  // 3. Wall fallback
+  if (scene.room?.walls) {
+    scene.room.walls = scene.room.walls.map(w => {
+      if (typeof w === 'string') return { side: w, features: '' }
+      if (!w.side) w.side = w.name || w.direction || w.wall || 'unknown'
+      if (!w.features) w.features = w.description || w.content || ''
+      return w
+    })
+  }
 
-2. **Objects**: Place every object using normalized coordinates (0-1 range):
-   - x: left(0) to right(1)
-   - y: floor(0) to ceiling(1)
-   - z: near/front(0) to far/back(1)
-   - width, depth: normalized footprint
-   - Assign a hex color matching the object's actual color
-   - List which camera indices (0-based) saw it
-   - Confidence 0-1
-
-3. **People**: Place each person with:
-   - x, y, z position (normalized 0-1)
-   - gazeDegrees: 0=north, 90=east, 180=south, 270=west
-   - gazeTarget: id of the object they face (if any)
-   - clothing description
-   - pose: sitting/standing/etc
-   - seenIn: camera indices
-
-4. **Relations**: Natural language descriptions of spatial relationships between objects and people.
-
-5. **Cameras**: For each of the ${imageCount} input images, estimate:
-   - index (0-based)
-   - estimatedPosition {x, z} in normalized coords
-   - fovDegrees
-
-6. **Walls**: Each wall must have a "side" (e.g. "north", "south", "east", "west") and "features" (string description of what's on it).
-
-Types for objects: furniture, electronics, decoration, appliance
-People are separate from objects.
-
-Object IDs: Use descriptive snake_case names like "conference_table", "whiteboard_north", "monitor_left", "chair_1", "ceiling_projector". The name should describe WHAT the object is.
-People IDs: Use descriptive names like "man_blue_shirt", "woman_standing_left", "person_glasses_center". The name should help identify WHO they are.
-
-Do NOT use generic IDs like obj_1, obj_2, person_1, person_2. Every ID must be descriptive and unique.
-
-Relations must be plain text strings describing spatial relationships, e.g. "The conference table is in the center of the room". Do NOT return objects for relations — only strings.
-Object names: use descriptive names like "conference table", "whiteboard", "laptop", NOT generic "obj 1".
-
-CRITICAL POSITIONING RULES:
-- Place objects and people so they make spatial sense — objects on tables should have appropriate y values, people sitting in chairs should be near chairs.
-- SPREAD PEOPLE OUT: If multiple people are sitting around a table, distribute them along the table edges. Each person must have DISTINCT x,z coordinates with at least 0.05 separation. Do NOT cluster everyone at the same x,z position.
-- Example: 6 people around a rectangular table should be placed at 3 positions along each long side, spaced evenly.
-
-DETERMINISM: Be as deterministic as possible. Given the same images, always produce the same spatial layout. Derive positions strictly from visual evidence, not random placement.`
+  return scene
 }
 
-// ── Main Export ──
+// ── Ensemble: merge multiple runs via coordinate matching ──
 
-export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUrl, onProgress }) {
-  if (!images?.length) throw new Error('At least one image is required')
-  if (!apiKey) throw new Error('API key is required')
+function ensembleMerge(runs) {
+  const N = runs.length
+  const QUORUM = Math.ceil(N / 2)
 
-  const startTime = Date.now()
+  function matchItems(itemsPerRun, distThreshold) {
+    const clusters = []
+    const used = itemsPerRun.map(() => new Set())
+
+    for (let bi = 0; bi < itemsPerRun[0].length; bi++) {
+      const base = itemsPerRun[0][bi]
+      const cluster = [{ runIdx: 0, item: base }]
+      const bType = (base.type || base.pose || '').toLowerCase()
+
+      for (let r = 1; r < N; r++) {
+        let bestDist = Infinity, bestIdx = -1
+        for (let j = 0; j < itemsPerRun[r].length; j++) {
+          if (used[r].has(j)) continue
+          const c = itemsPerRun[r][j]
+          const cType = (c.type || c.pose || '').toLowerCase()
+          if (base.type && c.type && bType !== cType) continue
+          const dx = (c.x || 0) - (base.x || 0)
+          const dz = (c.z || 0) - (base.z || 0)
+          const dist = Math.sqrt(dx * dx + dz * dz)
+          if (dist < bestDist) { bestDist = dist; bestIdx = j }
+        }
+        if (bestDist < distThreshold && bestIdx >= 0) {
+          cluster.push({ runIdx: r, item: itemsPerRun[r][bestIdx] })
+          used[r].add(bestIdx)
+        }
+      }
+      clusters.push(cluster)
+    }
+
+    // Pick up unmatched items from other runs
+    for (let r = 1; r < N; r++) {
+      for (let j = 0; j < itemsPerRun[r].length; j++) {
+        if (used[r].has(j)) continue
+        const item = itemsPerRun[r][j]
+        const iType = (item.type || item.pose || '').toLowerCase()
+        let bestCi = -1, bestDist = Infinity
+        for (let ci = 0; ci < clusters.length; ci++) {
+          if (clusters[ci].some(e => e.runIdx === r)) continue
+          const rep = clusters[ci][0].item
+          const rType = (rep.type || rep.pose || '').toLowerCase()
+          if (item.type && rep.type && iType !== rType) continue
+          const dx = (item.x || 0) - (rep.x || 0)
+          const dz = (item.z || 0) - (rep.z || 0)
+          const dist = Math.sqrt(dx * dx + dz * dz)
+          if (dist < bestDist) { bestDist = dist; bestCi = ci }
+        }
+        if (bestDist < distThreshold && bestCi >= 0) {
+          clusters[bestCi].push({ runIdx: r, item })
+        } else {
+          clusters.push([{ runIdx: r, item }])
+        }
+      }
+    }
+
+    return clusters
+  }
+
+  function median(arr) {
+    const sorted = [...arr].sort((a, b) => a - b)
+    const mid = Math.floor(sorted.length / 2)
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+  }
+
+  function mostCommon(arr) {
+    const freq = {}
+    arr.forEach(v => { if (v) freq[v] = (freq[v] || 0) + 1 })
+    const entries = Object.entries(freq)
+    return entries.length ? entries.sort((a, b) => b[1] - a[1])[0][0] : undefined
+  }
+
+  function mergeCluster(cluster, kind) {
+    const items = cluster.map(c => c.item)
+    const out = {}
+    out.x = +median(items.map(i => i.x || 0)).toFixed(3)
+    out.y = +median(items.map(i => i.y || 0)).toFixed(3)
+    out.z = +median(items.map(i => i.z || 0)).toFixed(3)
+
+    const run0 = cluster.find(c => c.runIdx === 0)
+    out.id = (run0 || cluster[0]).item.id
+    out.name = items.sort((a, b) => (b.name || '').length - (a.name || '').length)[0].name || out.id
+
+    if (kind === 'object') {
+      out.width = +median(items.map(i => i.width || 0.05)).toFixed(3)
+      out.depth = +median(items.map(i => i.depth || 0.05)).toFixed(3)
+      out.type = mostCommon(items.map(i => i.type))
+      out.color = mostCommon(items.map(i => i.color))
+      out.confidence = +median(items.map(i => i.confidence || 0.8)).toFixed(2)
+      out.anchorRef = mostCommon(items.map(i => i.anchorRef))
+      out.zone = mostCommon(items.map(i => i.zone))
+    }
+
+    if (kind === 'person') {
+      out.pose = mostCommon(items.map(i => i.pose))
+      out.clothing = items[0].clothing
+      out.gazeDegrees = +median(items.map(i => i.gazeDegrees || 0)).toFixed(0)
+      out.gazeTarget = mostCommon(items.map(i => i.gazeTarget))
+      out.zone = mostCommon(items.map(i => i.zone))
+      out.anchorRef = mostCommon(items.map(i => i.anchorRef))
+    }
+
+    const seenSet = new Set()
+    items.forEach(i => (i.seenIn || []).forEach(s => seenSet.add(s)))
+    out.seenIn = [...seenSet].sort()
+
+    return out
+  }
+
+  // Merge objects
+  const objClusters = matchItems(runs.map(r => r.objects || []), 0.15)
+  const objects = objClusters.filter(c => c.length >= QUORUM).map(c => mergeCluster(c, 'object'))
+
+  // Merge people
+  const pplClusters = matchItems(runs.map(r => r.people || []), 0.20)
+  const people = pplClusters.filter(c => c.length >= QUORUM).map(c => mergeCluster(c, 'person'))
+
+  // Merge anchors
+  const anchorArrays = runs.map(r => r.anchors || [])
+  let anchors = []
+  if (anchorArrays.some(a => a.length > 0)) {
+    const anchorClusters = matchItems(anchorArrays, 0.15)
+    anchors = anchorClusters.filter(c => c.length >= QUORUM).map(c => mergeCluster(c, 'object'))
+  }
+
+  // Room: median dimensions
+  const room = {
+    shape: runs[0].room?.shape || 'rectangular',
+    estimatedWidth: +median(runs.map(r => r.room?.estimatedWidth || 7)).toFixed(1),
+    estimatedDepth: +median(runs.map(r => r.room?.estimatedDepth || 5)).toFixed(1),
+    walls: runs[0].room?.walls || [],
+    grid: runs[0].room?.grid
+  }
+
+  // Cameras: median
+  const maxCams = Math.max(...runs.map(r => (r.cameras || []).length))
+  const cameras = []
+  for (let i = 0; i < maxCams; i++) {
+    const cams = runs.map(r => (r.cameras || [])[i]).filter(Boolean)
+    if (cams.length >= QUORUM) {
+      cameras.push({
+        index: i,
+        estimatedPosition: {
+          x: +median(cams.map(c => c.estimatedPosition?.x || 0)).toFixed(2),
+          z: +median(cams.map(c => c.estimatedPosition?.z || 0)).toFixed(2)
+        },
+        fovDegrees: +median(cams.map(c => c.fovDegrees || 60)).toFixed(0)
+      })
+    }
+  }
+
+  // Relations: union
+  const relSet = new Set()
+  runs.forEach(r => (r.relations || []).forEach(rel => {
+    if (typeof rel === 'string') relSet.add(rel)
+  }))
+
+  return { room, anchors, objects, people, relations: [...relSet], cameras }
+}
+
+// ── Single LLM call ──
+
+async function runOnce({ images, apiKey, model, baseUrl, proxyUrl, onProgress }) {
   const mdl = model || DEFAULT_MODEL
   const base = baseUrl || 'https://api.anthropic.com'
   const proxy = proxyUrl || undefined
   const provider = base.includes('anthropic.com') ? 'anthropic' : 'openai'
   const progress = onProgress || (() => {})
 
-  progress('start', { imageCount: images.length, model: mdl })
-
-  // ── Step 1: Per-image analysis ──
-  progress('step1', { message: 'Analyzing images with VLM...' })
-
   const visionImages = images.map(img => ({
     data: img.data,
     media_type: img.media_type || 'image/jpeg'
   }))
 
-  const analysisPrompt = buildAnalysisPrompt(images.length)
-  const imageNames = images.map((img, i) => img.name || `camera-${i}`).join(', ')
+  const prompt = buildPrompt(images.length)
+  const schemaStr = JSON.stringify(SCENE_SCHEMA, null, 2)
 
-  const step1Result = await agenticAsk(
-    `${analysisPrompt}\n\nThe ${images.length} images are named: ${imageNames}. Analyze them all.`,
+  const result = await agenticAsk(
+    prompt,
     {
       provider,
       apiKey,
@@ -203,44 +376,69 @@ export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUr
       proxyUrl: proxy,
       tools: [],
       stream: false,
+      schema: SCENE_SCHEMA,
+      systemPrompt: `You must respond with valid JSON matching this schema:\n${schemaStr}\n\nOutput ONLY JSON, no markdown, no code fences, no explanation.`,
       images: visionImages
     },
     (type, data) => {
-      if (type === 'status') progress('step1_status', data)
+      if (type === 'status') progress('llm_status', data)
     }
   )
 
-  const analysisText = step1Result.answer
-  progress('step1_done', { length: analysisText.length })
+  return postProcess(result.data)
+}
 
-  // ── Step 2: Unified reconstruction (structured output) ──
-  progress('step2', { message: 'Reconstructing unified scene...' })
+// ── Main Export ──
 
-  const reconstructionPrompt = buildReconstructionPrompt(analysisText, images.length)
+export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUrl, ensemble, onProgress }) {
+  if (!images?.length) throw new Error('At least one image is required')
+  if (!apiKey) throw new Error('API key is required')
 
-  const step2Result = await agenticAsk(
-    reconstructionPrompt,
-    {
-      provider,
-      apiKey,
-      model: mdl,
-      baseUrl: base,
-      proxyUrl: proxy,
-      tools: [],
-      stream: false,
-      schema: SCENE_SCHEMA
-    },
-    (type, data) => {
-      if (type === 'status') progress('step2_status', data)
+  const startTime = Date.now()
+  const progress = onProgress || (() => {})
+  const ensembleRuns = ensemble ? (typeof ensemble === 'number' ? ensemble : 3) : 1
+
+  progress('start', { imageCount: images.length, model: model || DEFAULT_MODEL, ensemble: ensembleRuns })
+
+  let scene
+
+  if (ensembleRuns > 1) {
+    // Parallel ensemble
+    progress('ensemble', { message: `Running ${ensembleRuns} parallel analyses...`, runs: ensembleRuns })
+
+    const promises = Array.from({ length: ensembleRuns }, (_, i) =>
+      runOnce({
+        images, apiKey, model, baseUrl, proxyUrl,
+        onProgress: (step, data) => progress(`run${i}_${step}`, data)
+      }).catch(err => {
+        progress(`run${i}_error`, { error: err.message })
+        return null
+      })
+    )
+
+    const results = (await Promise.all(promises)).filter(Boolean)
+    
+    if (results.length === 0) throw new Error('All ensemble runs failed')
+    if (results.length === 1) {
+      scene = results[0]
+      progress('ensemble_partial', { message: 'Only 1 run succeeded, using single result' })
+    } else {
+      progress('ensemble_merge', { message: `Merging ${results.length} results...` })
+      scene = ensembleMerge(results)
+      scene = postProcess(scene)
     }
-  )
+  } else {
+    // Single run
+    progress('step1', { message: 'Analyzing and reconstructing scene...' })
+    scene = await runOnce({ images, apiKey, model, baseUrl, proxyUrl, onProgress: progress })
+  }
 
-  const scene = step2Result.data
-
-  // ── Attach metadata ──
+  // Attach metadata
   scene.meta = {
-    model: mdl,
+    model: model || DEFAULT_MODEL,
     imageCount: images.length,
+    ensemble: ensembleRuns > 1,
+    ensembleRuns: ensembleRuns,
     elapsedMs: Date.now() - startTime
   }
 
