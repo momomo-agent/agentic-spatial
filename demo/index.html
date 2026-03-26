@@ -494,7 +494,7 @@ function renderScene(data) {
     gazeLine.userData.spatial = true
     scene.add(gazeLine)
 
-    addLabel(p.id, px, py + ph + 0.3, pz)
+    addLabel(p.name || p.id, px, py + ph + 0.3, pz)
   }
 
   // Camera markers
@@ -628,14 +628,17 @@ function populateInspector(data) {
     const item = document.createElement('div')
     item.className = 'obj-item'
     item.dataset.id = p.id
-    item.innerHTML = `<span class="obj-dot" style="background:#4dc9f6"></span><span class="obj-name">${p.id.replace(/_/g, ' ')}</span><span class="obj-type">${p.pose || ''}</span>`
+    item.innerHTML = `<span class="obj-dot" style="background:#4dc9f6"></span><span class="obj-name">${(p.name || p.id).replace(/_/g, ' ')}</span><span class="obj-type">${p.pose || ''}</span>`
     item.addEventListener('click', () => selectItem(p.id))
     pl.appendChild(item)
   }
 
   // Relations
   const rl = document.getElementById('relations-list')
-  rl.innerHTML = (data.relations || []).map(r => `<div class="relation-item">${r}</div>`).join('')
+  rl.innerHTML = (data.relations || []).map(r => {
+    const text = typeof r === 'string' ? r : (r.description || r.text || r.relation || JSON.stringify(r))
+    return `<div class="relation-item">${text}</div>`
+  }).join('')
 
   // JSON
   document.getElementById('json-raw').textContent = JSON.stringify(data, null, 2)

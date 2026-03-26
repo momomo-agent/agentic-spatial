@@ -151,14 +151,20 @@ Merge all observations into one coherent spatial model:
 Types for objects: furniture, electronics, decoration, appliance
 People are separate from objects.
 
-Object IDs: obj_1, obj_2, etc.
-People IDs: person_1, person_2, etc.
+Object IDs: Use descriptive snake_case names like "conference_table", "whiteboard_north", "monitor_left", "chair_1", "ceiling_projector". The name should describe WHAT the object is.
+People IDs: Use descriptive names like "man_blue_shirt", "woman_standing_left", "person_glasses_center". The name should help identify WHO they are.
+
+Do NOT use generic IDs like obj_1, obj_2, person_1, person_2. Every ID must be descriptive and unique.
+
+Relations must be plain text strings describing spatial relationships, e.g. "The conference table is in the center of the room". Do NOT return objects for relations — only strings.
 Object names: use descriptive names like "conference table", "whiteboard", "laptop", NOT generic "obj 1".
 
 CRITICAL POSITIONING RULES:
 - Place objects and people so they make spatial sense — objects on tables should have appropriate y values, people sitting in chairs should be near chairs.
 - SPREAD PEOPLE OUT: If multiple people are sitting around a table, distribute them along the table edges. Each person must have DISTINCT x,z coordinates with at least 0.05 separation. Do NOT cluster everyone at the same x,z position.
-- Example: 6 people around a rectangular table should be placed at 3 positions along each long side, spaced evenly.`
+- Example: 6 people around a rectangular table should be placed at 3 positions along each long side, spaced evenly.
+
+DETERMINISM: Be as deterministic as possible. Given the same images, always produce the same spatial layout. Derive positions strictly from visual evidence, not random placement.`
 }
 
 // ── Main Export ──
