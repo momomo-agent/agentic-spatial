@@ -408,6 +408,15 @@ analyzeBtn.addEventListener('click', async () => {
     populateInspector(sceneData)
     document.getElementById('right').classList.add('open')
     document.querySelector('[data-view="inspector"]').classList.add('active')
+    // Auto-switch to 3D perspective view
+    document.querySelectorAll('.view-btn:not([data-view="inspector"])').forEach(b => b.classList.remove('active'))
+    document.querySelector('[data-view="perspective"]').classList.add('active')
+    const W = sceneData.room?.estimatedWidth || 6
+    const D = sceneData.room?.estimatedDepth || 4
+    const H = 3
+    camera.position.set(W * 1.2, H * 1.5, D * 1.2)
+    controls.target.set(W / 2, H / 3, D / 2)
+    controls.update()
     resize()
     log('Complete.')
   } catch (e) {
@@ -576,7 +585,7 @@ function addLabel(text, x, y, z) {
   canvas2d.width = 256
   canvas2d.height = 64
   const ctx = canvas2d.getContext('2d')
-  ctx.font = '24px Inter, system-ui, sans-serif'
+  ctx.font = '18px Inter, system-ui, sans-serif'
   ctx.fillStyle = '#e0e0e8'
   ctx.textAlign = 'center'
   ctx.fillText(text.replace(/_/g, ' '), 128, 40)
@@ -586,7 +595,7 @@ function addLabel(text, x, y, z) {
   const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0.7, depthTest: false })
   const sprite = new THREE.Sprite(spriteMat)
   sprite.position.set(x, y, z)
-  sprite.scale.set(1.5, 0.4, 1)
+  sprite.scale.set(1.0, 0.25, 1)
   sprite.userData.spatial = true
   scene.add(sprite)
 }
