@@ -122,77 +122,15 @@ const SCENE_SCHEMA = {
 // ── v7 Soft Grid + Anchor Prompt ──
 
 function buildPrompt(imageCount) {
-  return `Analyze these ${imageCount} photos of the same room taken from different angles. Output a unified 3D scene reconstruction as JSON.
+  return `${imageCount} photos, same room, different angles. Reconstruct as JSON.
 
-COORDINATE SYSTEM (normalized 0-1):
-- x: left(0) → right(1)
-- y: floor(0) → ceiling(1)  
-- z: front/north(0) → back/south(1)
-- "north" = wall the first camera faces (z=0 side)
+Coords 0-1: x:left→right, y:floor→ceiling, z:north(cam0)→south.
 
-LAYERED RECONSTRUCTION — work top-down, each layer anchors the next:
+room → anchors (fixed: tables,screens,doors. Doors MUST be near walls x/z<0.15 or>0.85) → cameras (1 per image) → objects (relative to anchors, on table: y≈table.y+0.06) → people → behaviors → relations → attentionMap → coverage.
 
-━━━ LAYER 1: ROOM (absolute reference frame) ━━━
-Analyze the room itself first. This is your fixed coordinate system.
-- Shape, dimensions, walls with features
-- Divide into 3×3 grid zones: NW, N, NE, W, C, E, SW, S, SE
-- Output room.grid describing what occupies each zone
+PEOPLE: Scan each image left-to-right. Count every head/shoulder/hand visible. Match same person across angles by clothing+position. List EVERY unique individual. Don't miss anyone partially hidden behind laptops or at table edges.
 
-━━━ LAYER 2: ANCHORS (fixed objects, 2-4) ━━━
-Large immovable objects that define the spatial skeleton. Position them relative to the ROOM.
-- id: anchor_{type}_{zone}, type: table|board|door|cabinet|screen
-- These don't move — their positions are ground truth for everything else
-- x, y, z, width, depth: 0-1, confidence: ~1.0, seenIn: [indices]
-
-━━━ LAYER 3: OBJECTS (relative to anchors) ━━━
-Smaller items. Position each relative to its nearest ANCHOR.
-- id: {type}_{zone}_{number}, anchorRef: nearest anchor id
-- Think: "this laptop is on the LEFT side of anchor_table_C, about 30% from the table edge"
-- x, y, z, width, depth: 0-1, confidence: 0-1, seenIn: [indices]
-
-━━━ LAYER 4: PEOPLE (relative to anchors + objects) ━━━
-Count people using a SYSTEMATIC SCAN — go image by image, zone by zone:
-1. For each image: scan NW→N→NE→W→C→E→SW→S→SE
-2. In each zone: count heads, shoulders, hands, even partial bodies at edges
-3. Cross-reference across images: same person seen from different angles = same ID
-4. Final tally: list every unique person with their zone
-
-PEOPLE COUNTING CHECKLIST:
-□ Did I check all 9 zones in every image?
-□ Did I check edges and partially visible people?
-□ Did I check behind large objects where someone might be partially occluded?
-□ Did I cross-reference across camera angles?
-
-Each person needs:
-- id: person_{zone}_{number}, zone, anchorRef
-- x, y, z: 0-1 (position relative to nearest anchor)
-- gazeDegrees, gazeTarget, clothing, pose (sitting|standing|leaning), seenIn
-- lookingAtCamera: camera index if facing camera, -1 otherwise
-- emotion: neutral|happy|focused|bored|confused|surprised|anxious|sad|angry|excited|contemplative
-- emotionConfidence: 0-1
-- activity: typing|reading|talking|listening|presenting|writing|watching|walking|eating|phone_use|vr_use|idle
-- interactingWith: [person ids]
-
-━━━ LAYER 5: BEHAVIORS (emergent from people + objects) ━━━
-What's happening? Infer from people positions, gaze, activity.
-- type: meeting|presenting|solo_work|conversation|idle|moving|aware_of_camera
-- participants: [person ids], focus: anchor/object id, description
-
-━━━ LAYER 6: ATTENTION + COVERAGE ━━━
-- ATTENTION MAP: object/anchor → [person ids looking at it]
-- COVERAGE: per camera: visiblePeople, occludedPeople, blindSpots
-
-RELATIONS: Spatial strings referencing zones/anchors.
-CAMERAS: index, estimatedPosition {x, z}, fovDegrees.
-
-RULES:
-- PEOPLE COUNT ACCURACY IS CRITICAL. Use the systematic scan above. Only count a person if you can clearly see evidence of a human body (head, torso, or limbs). Do NOT count shadows, reflections, bags, coats on chairs, or ambiguous shapes as people.
-- Zone is a LABEL for reasoning, not a hard coordinate constraint. Place items where they actually are.
-- IDs use zone labels for determinism: same object in same zone = same ID every time.
-- SPREAD people: ≥0.05 separation.
-- Objects ON a table: y ≈ table.y + 0.06.
-- Relations = plain strings, walls = {side, features}.
-- CONSISTENCY PRIORITY: If an object is near a zone boundary, always assign it to the zone where its CENTER falls. Anchor positions should be identical across any analysis of these images.`
+IDs: anchor_{type}_{zone}, {type}_{zone}_{n}, person_{zone}_{n}. People ≥0.05 apart.`
 }
 
 // ── Post-processing ──

@@ -10,12 +10,11 @@ const { agenticAsk } = await import(IS_BROWSER ? AGENTIC_CORE_CDN : AGENTIC_CORE
 
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514'
 
-// ── Output Schemas ──
+// ── Output Schema ──
 
-// Step 1: Fixed reference frame — room structure, anchors, cameras
-const STEP1_SCHEMA = {
+const SCENE_SCHEMA = {
   type: 'object',
-  required: ['room', 'anchors', 'cameras'],
+  required: ['room', 'anchors', 'objects', 'people', 'relations', 'cameras'],
   properties: {
     room: {
       type: 'object',
@@ -39,15 +38,6 @@ const STEP1_SCHEMA = {
       }
     },
     anchors: { type: 'array' },
-    cameras: { type: 'array' }
-  }
-}
-
-// Step 2: Dynamic elements positioned relative to anchors
-const STEP2_SCHEMA = {
-  type: 'object',
-  required: ['objects', 'people', 'relations'],
-  properties: {
     objects: {
       type: 'array',
       items: {
@@ -91,6 +81,7 @@ const STEP2_SCHEMA = {
       }
     },
     relations: { type: 'array', items: { type: 'string' } },
+    cameras: { type: 'array' },
     behaviors: {
       type: 'array',
       items: {
@@ -128,129 +119,18 @@ const STEP2_SCHEMA = {
   }
 }
 
-// Combined schema used by ensembleMerge and SpatialSession update
-const SCENE_SCHEMA = {
-  type: 'object',
-  required: ['room', 'anchors', 'objects', 'people', 'relations', 'cameras'],
-  properties: {
-    ...STEP1_SCHEMA.properties,
-    ...STEP2_SCHEMA.properties
-  }
-}
+// ── v7 Soft Grid + Anchor Prompt ──
 
-// ── Step 1 Prompt: Fixed reference frame (room + anchors + cameras) ──
+function buildPrompt(imageCount) {
+  return `${imageCount} photos, same room, different angles. Reconstruct as JSON.
 
-function buildStep1Prompt(imageCount) {
-  return `Analyze these ${imageCount} photos of the same room taken from different angles. Output ONLY the fixed reference frame: room structure, anchor objects, and camera positions.
+Coords 0-1: x:left→right, y:floor→ceiling, z:north(cam0)→south.
 
-COORDINATE SYSTEM (normalized 0-1):
-- x: left(0) → right(1)
-- y: floor(0) → ceiling(1)
-- z: front/north(0) → back/south(1)
-- "north" = wall the first camera faces (z=0 side)
+room → anchors (fixed: tables,screens,doors. Doors MUST be near walls x/z<0.15 or>0.85) → cameras (1 per image) → objects (relative to anchors, on table: y≈table.y+0.06) → people → behaviors → relations → attentionMap → coverage.
 
-YOUR TASK: Establish the spatial skeleton that everything else will be positioned against.
+PEOPLE: Scan each image left-to-right. Count every head/shoulder/hand visible. Match same person across angles by clothing+position. List EVERY unique individual. Don't miss anyone partially hidden behind laptops or at table edges.
 
-━━━ ROOM (absolute reference frame) ━━━
-Analyze the room itself first. This is the fixed coordinate system.
-- Shape, dimensions, walls with features
-- Divide into 3×3 grid zones: NW, N, NE, W, C, E, SW, S, SE
-- Output room.grid describing what occupies each zone
-
-━━━ ANCHORS (fixed objects, 2-4) ━━━
-Large immovable objects that define the spatial skeleton. Position them relative to the ROOM.
-- id: anchor_{type}_{zone}, type: table|board|door|cabinet|screen
-- These don't move — their positions are ground truth for everything else
-- x, y, z, width, depth: 0-1, confidence: ~1.0, seenIn: [indices]
-
-━━━ CAMERAS ━━━
-Each input image comes from a DIFFERENT camera/device. Output one camera entry per input image.
-- index: matches the image index (0-based)
-- name: the device name (from image label)
-- estimatedPosition: {x, z} where the camera is in the room (0-1)
-- facingDegrees, fovDegrees
-
-RULES:
-- First determine the room shape and walls. Then find 2-4 large furniture pieces as anchors.
-- Zone is a LABEL for reasoning, not a hard coordinate constraint. Place items where they actually are.
-- IDs use zone labels for determinism: same object in same zone = same ID every time.
-- CONSISTENCY PRIORITY: If an object is near a zone boundary, always assign it to the zone where its CENTER falls. Anchor positions should be identical across any analysis of these images.
-- Relations = plain strings, walls = {side, features}.
-- Output ONLY room, anchors, cameras. Do NOT include objects, people, or behaviors.`
-}
-
-// ── Step 2 Prompt: Dynamic elements relative to anchors ──
-
-function buildStep2Prompt(imageCount, step1Result) {
-  return `Analyze these ${imageCount} photos of the same room. Position all dynamic elements (objects, people, behaviors) relative to the known room structure and anchors.
-
-COORDINATE SYSTEM (normalized 0-1):
-- x: left(0) → right(1)
-- y: floor(0) → ceiling(1)
-- z: front/north(0) → back/south(1)
-- "north" = wall the first camera faces (z=0 side)
-
-━━━ OBJECTS (relative to anchors) ━━━
-Smaller items. Position each relative to its nearest ANCHOR.
-- id: {type}_{zone}_{number}, anchorRef: nearest anchor id
-- Think: "this laptop is on the LEFT side of anchor_table_C, about 30% from the table edge"
-- x, y, z, width, depth: 0-1, confidence: 0-1, seenIn: [indices]
-
-━━━ PEOPLE (relative to anchors + objects) ━━━
-Count people using a SYSTEMATIC SCAN — go image by image, zone by zone:
-1. For each image: scan NW→N→NE→W→C→E→SW→S→SE
-2. In each zone: count heads, shoulders, hands, even partial bodies at edges
-3. Cross-reference across images: same person seen from different angles = same ID
-4. Final tally: list every unique person with their zone
-
-CRITICAL CROSS-IMAGE DEDUPLICATION:
-When multiple images show the same room from different angles, the SAME person appears in multiple images.
-You MUST deduplicate:
-- Match by POSITION: person at similar spatial coordinates across images = same person
-- Match by CLOTHING: same shirt/pants color across images = likely same person
-- Match by CONTEXT: person sitting at the same desk/chair across images = same person
-- When in doubt, MERGE (fewer false positives is better than inflated count)
-- The total people count should reflect UNIQUE individuals in the room, NOT total appearances across all images
-- Use seenIn: [image indices] to track which images each person appears in
-
-PEOPLE COUNTING CHECKLIST:
-□ Did I check all 9 zones in every image?
-□ Did I check edges and partially visible people?
-□ Did I check behind large objects where someone might be partially occluded?
-□ Did I cross-reference across camera angles?
-□ Did I DEDUPLICATE — is each person_id a UNIQUE individual, not a duplicate from another angle?
-□ Is my total count ≤ the MINIMUM count seen in any single image that covers the whole room?
-
-Each person needs:
-- id: person_{zone}_{number}, zone, anchorRef
-- x, y, z: 0-1 (position relative to nearest anchor)
-- gazeDegrees, gazeTarget, clothing, pose (sitting|standing|leaning), seenIn
-- lookingAtCamera: camera index if facing camera, -1 otherwise
-- emotion: neutral|happy|focused|bored|confused|surprised|anxious|sad|angry|excited|contemplative
-- emotionConfidence: 0-1
-- activity: typing|reading|talking|listening|presenting|writing|watching|walking|eating|phone_use|vr_use|idle
-- interactingWith: [person ids]
-
-━━━ BEHAVIORS (emergent from people + objects) ━━━
-What's happening? Infer from people positions, gaze, activity.
-- type: meeting|presenting|solo_work|conversation|idle|moving|aware_of_camera
-- participants: [person ids], focus: anchor/object id, description
-
-━━━ ATTENTION + COVERAGE ━━━
-- ATTENTION MAP: object/anchor → [person ids looking at it]
-- COVERAGE: per camera: visiblePeople, occludedPeople, blindSpots
-
-RELATIONS: Spatial strings referencing zones/anchors.
-
-RULES:
-- PEOPLE COUNT ACCURACY IS CRITICAL. Use the systematic scan above. Only count a person if you can clearly see evidence of a human body (head, torso, or limbs). Do NOT count shadows, reflections, bags, coats on chairs, or ambiguous shapes as people.
-- DEDUPLICATION IS CRITICAL. Multiple images show the SAME room from different angles. The same person WILL appear in multiple images. Each person_id must be a UNIQUE individual. When uncertain, assume it's the same person (under-count is safer than over-count).
-- USE THE ANCHORS as reference points for positioning. Think: "this person is sitting at anchor_table_C, on the left side".
-- Zone is a LABEL for reasoning, not a hard coordinate constraint. Place items where they actually are.
-- IDs use zone labels for determinism: same object in same zone = same ID every time.
-- SPREAD people: ≥0.05 separation.
-- Objects ON a table: y ≈ table.y + 0.06.
-- Output ONLY objects, people, relations, behaviors, attentionMap, coverage. Do NOT include room, anchors, or cameras.`
+IDs: anchor_{type}_{zone}, {type}_{zone}_{n}, person_{zone}_{n}. People ≥0.05 apart.`
 }
 
 // ── Post-processing ──
@@ -492,7 +372,7 @@ function ensembleMerge(runs) {
   return { room, anchors, objects, people, relations: [...relSet], cameras }
 }
 
-// ── Two-step LLM call ──
+// ── Single LLM call ──
 
 async function runOnce({ images, apiKey, model, baseUrl, proxyUrl, provider: providerOverride, onProgress }) {
   const mdl = model || DEFAULT_MODEL
@@ -507,14 +387,11 @@ async function runOnce({ images, apiKey, model, baseUrl, proxyUrl, provider: pro
     detail: 'high'
   }))
 
-  // ── Step 1: Fixed reference frame (room + anchors + cameras) ──
-  progress('step1_start', { message: 'Establishing room structure and anchors...' })
+  const prompt = buildPrompt(images.length)
+  const schemaStr = JSON.stringify(SCENE_SCHEMA, null, 2)
 
-  const step1Prompt = buildStep1Prompt(images.length)
-  const step1SchemaStr = JSON.stringify(STEP1_SCHEMA, null, 2)
-
-  const step1Result = await agenticAsk(
-    step1Prompt,
+  const result = await agenticAsk(
+    prompt,
     {
       provider,
       apiKey,
@@ -523,62 +400,16 @@ async function runOnce({ images, apiKey, model, baseUrl, proxyUrl, provider: pro
       proxyUrl: proxy,
       tools: [],
       stream: false,
-      schema: STEP1_SCHEMA,
-      systemPrompt: `You must respond with valid JSON matching this schema:\n${step1SchemaStr}\n\nOutput ONLY JSON, no markdown, no code fences, no explanation.`,
+      schema: SCENE_SCHEMA,
+      systemPrompt: `You must respond with valid JSON matching this schema:\n${schemaStr}\n\nOutput ONLY JSON, no markdown, no code fences, no explanation.`,
       images: visionImages
     },
     (type, data) => {
-      if (type === 'status') progress('step1_status', data)
+      if (type === 'status') progress('llm_status', data)
     }
   )
 
-  const step1 = step1Result.data
-  progress('step1_done', { room: step1.room, anchorCount: (step1.anchors || []).length, cameraCount: (step1.cameras || []).length })
-
-  // ── Step 2: Dynamic elements positioned relative to anchors ──
-  progress('step2_start', { message: 'Positioning objects and people relative to anchors...' })
-
-  const step2Prompt = buildStep2Prompt(images.length, step1)
-  const step2SchemaStr = JSON.stringify(STEP2_SCHEMA, null, 2)
-
-  const step2SystemPrompt = `你已经知道这个房间的结构：\n${JSON.stringify(step1, null, 2)}\n\n基于这些锚点，定位以下动态元素。\n\nYou must respond with valid JSON matching this schema:\n${step2SchemaStr}\n\nOutput ONLY JSON, no markdown, no code fences, no explanation.`
-
-  const step2Result = await agenticAsk(
-    step2Prompt,
-    {
-      provider,
-      apiKey,
-      model: mdl,
-      baseUrl: base,
-      proxyUrl: proxy,
-      tools: [],
-      stream: false,
-      schema: STEP2_SCHEMA,
-      systemPrompt: step2SystemPrompt,
-      images: visionImages
-    },
-    (type, data) => {
-      if (type === 'status') progress('step2_status', data)
-    }
-  )
-
-  const step2 = step2Result.data
-  progress('step2_done', { objectCount: (step2.objects || []).length, peopleCount: (step2.people || []).length })
-
-  // ── Merge step 1 + step 2 into complete scene ──
-  const scene = {
-    room: step1.room,
-    anchors: step1.anchors || [],
-    cameras: step1.cameras || [],
-    objects: step2.objects || [],
-    people: step2.people || [],
-    relations: step2.relations || [],
-    behaviors: step2.behaviors || [],
-    attentionMap: step2.attentionMap || {},
-    coverage: step2.coverage || {}
-  }
-
-  return postProcess(scene)
+  return postProcess(result.data)
 }
 
 // ── Main Export ──
