@@ -182,6 +182,7 @@ CAMERAS: index, estimatedPosition {x, z}, fovDegrees.
    - blindSpots: areas of the room not covered by any camera
 
 RULES:
+- PEOPLE COUNT IS CRITICAL: Look at EVERY region of every image. Count heads, shoulders, hands — even partially visible people at edges, behind objects, or in shadows. Missing a person is worse than a false positive.
 - Zone is a LABEL for reasoning, not a hard coordinate constraint. Place items where they actually are.
 - IDs use zone labels for determinism: same object in same zone = same ID every time.
 - SPREAD people: ≥0.05 separation.
