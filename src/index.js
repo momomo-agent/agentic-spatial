@@ -157,11 +157,23 @@ Count people using a SYSTEMATIC SCAN — go image by image, zone by zone:
 3. Cross-reference across images: same person seen from different angles = same ID
 4. Final tally: list every unique person with their zone
 
+CRITICAL CROSS-IMAGE DEDUPLICATION:
+When multiple images show the same room from different angles, the SAME person appears in multiple images.
+You MUST deduplicate:
+- Match by POSITION: person at similar spatial coordinates across images = same person
+- Match by CLOTHING: same shirt/pants color across images = likely same person
+- Match by CONTEXT: person sitting at the same desk/chair across images = same person
+- When in doubt, MERGE (fewer false positives is better than inflated count)
+- The total people count should reflect UNIQUE individuals in the room, NOT total appearances across all images
+- Use seenIn: [image indices] to track which images each person appears in
+
 PEOPLE COUNTING CHECKLIST:
 □ Did I check all 9 zones in every image?
 □ Did I check edges and partially visible people?
 □ Did I check behind large objects where someone might be partially occluded?
 □ Did I cross-reference across camera angles?
+□ Did I DEDUPLICATE — is each person_id a UNIQUE individual, not a duplicate from another angle?
+□ Is my total count ≤ the MINIMUM count seen in any single image that covers the whole room?
 
 Each person needs:
 - id: person_{zone}_{number}, zone, anchorRef
@@ -183,10 +195,15 @@ What's happening? Infer from people positions, gaze, activity.
 - COVERAGE: per camera: visiblePeople, occludedPeople, blindSpots
 
 RELATIONS: Spatial strings referencing zones/anchors.
-CAMERAS: index, estimatedPosition {x, z}, fovDegrees.
+CAMERAS: Each input image comes from a DIFFERENT camera/device. Output one camera entry per input image.
+- index: matches the image index (0-based)
+- name: the device name (from image label)
+- estimatedPosition: {x, z} where the camera is in the room (0-1)
+- facingDegrees, fovDegrees
 
 RULES:
 - PEOPLE COUNT ACCURACY IS CRITICAL. Use the systematic scan above. Only count a person if you can clearly see evidence of a human body (head, torso, or limbs). Do NOT count shadows, reflections, bags, coats on chairs, or ambiguous shapes as people.
+- DEDUPLICATION IS CRITICAL. Multiple images show the SAME room from different angles. The same person WILL appear in multiple images. Each person_id must be a UNIQUE individual. When uncertain, assume it's the same person (under-count is safer than over-count).
 - Zone is a LABEL for reasoning, not a hard coordinate constraint. Place items where they actually are.
 - IDs use zone labels for determinism: same object in same zone = same ID every time.
 - SPREAD people: ≥0.05 separation.
