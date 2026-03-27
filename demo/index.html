@@ -575,9 +575,9 @@ function renderScene(data) {
     addLabel(`cam-${cam.index}`, cx, 2.0, cz)
   }
 
-  // Center camera on room
+  // Camera position is set after renderScene by the caller
+  // Don't reset here to avoid fighting with user interaction
   controls.target.set(W / 2, H / 3, D / 2)
-  camera.position.set(W * 1.2, H * 1.5, D * 1.2)
   controls.update()
 }
 
