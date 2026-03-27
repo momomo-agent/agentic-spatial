@@ -186,7 +186,7 @@ RELATIONS: Spatial strings referencing zones/anchors.
 CAMERAS: index, estimatedPosition {x, z}, fovDegrees.
 
 RULES:
-- PEOPLE COUNT IS CRITICAL. Missing a person is worse than a false positive. Use the systematic scan above.
+- PEOPLE COUNT ACCURACY IS CRITICAL. Use the systematic scan above. Only count a person if you can clearly see evidence of a human body (head, torso, or limbs). Do NOT count shadows, reflections, bags, coats on chairs, or ambiguous shapes as people.
 - Zone is a LABEL for reasoning, not a hard coordinate constraint. Place items where they actually are.
 - IDs use zone labels for determinism: same object in same zone = same ID every time.
 - SPREAD people: ≥0.05 separation.
