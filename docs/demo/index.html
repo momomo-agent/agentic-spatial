@@ -575,10 +575,8 @@ function renderScene(data) {
     addLabel(`cam-${cam.index}`, cx, 2.0, cz)
   }
 
-  // Camera position is set after renderScene by the caller
-  // Don't reset here to avoid fighting with user interaction
-  controls.target.set(W / 2, H / 3, D / 2)
-  controls.update()
+  // Camera position and target are set after renderScene by the caller
+  // Don't set anything here to avoid fighting with user orbit interaction
 }
 
 function addLabel(text, x, y, z) {
@@ -639,13 +637,16 @@ function selectItem(id) {
   showDetail(id)
 }
 
+let cameraAnimating = false
 function animateCamera(target) {
+  cameraAnimating = true
   const offset = new THREE.Vector3(2, 2, 2)
   const dest = target.clone().add(offset)
   const startPos = camera.position.clone()
   const startTarget = controls.target.clone()
   let t = 0
   function step() {
+    if (!cameraAnimating) return  // user interrupted
     t += 0.04
     if (t > 1) t = 1
     const ease = t * (2 - t)
@@ -653,9 +654,13 @@ function animateCamera(target) {
     controls.target.lerpVectors(startTarget, target, ease)
     controls.update()
     if (t < 1) requestAnimationFrame(step)
+    else cameraAnimating = false
   }
   step()
 }
+
+// Stop camera animation when user starts interacting
+canvas.addEventListener('pointerdown', () => { cameraAnimating = false })
 
 // ── Inspector ──
 function populateInspector(data) {
