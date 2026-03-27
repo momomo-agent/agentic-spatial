@@ -93,8 +93,8 @@ a { color: var(--accent); }
 
 /* 3D controls */
 #view-controls {
-  position: absolute; top: 12px; right: 12px; z-index: 10;
-  display: flex; gap: 6px;
+  position: absolute; top: 12px; right: 12px; z-index: 20;
+  display: flex; gap: 6px; transition: right 0.2s;
 }
 .view-btn {
   background: rgba(18,18,26,0.85);
@@ -408,6 +408,7 @@ analyzeBtn.addEventListener('click', async () => {
     populateInspector(sceneData)
     document.getElementById('right').classList.add('open')
     document.querySelector('[data-view="inspector"]').classList.add('active')
+    document.getElementById('view-controls').style.right = '332px'
     // Auto-switch to 3D perspective view
     document.querySelectorAll('.view-btn:not([data-view="inspector"])').forEach(b => b.classList.remove('active'))
     document.querySelector('[data-view="perspective"]').classList.add('active')
@@ -722,13 +723,16 @@ document.querySelectorAll('.view-btn').forEach(btn => {
     const view = btn.dataset.view
     if (view === 'inspector') {
       const right = document.getElementById('right')
+      const viewControls = document.getElementById('view-controls')
       const isOpen = right.classList.contains('open')
       if (isOpen) {
         right.classList.remove('open')
         btn.classList.remove('active')
+        viewControls.style.right = '12px'
       } else {
         right.classList.add('open')
         btn.classList.add('active')
+        viewControls.style.right = '332px'
       }
       resize()
       return
