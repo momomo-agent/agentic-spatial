@@ -440,7 +440,8 @@ async function runOnce({ images, apiKey, model, baseUrl, proxyUrl, provider: pro
 
   const visionImages = images.map(img => ({
     data: img.data,
-    media_type: img.media_type || 'image/jpeg'
+    media_type: img.media_type || 'image/jpeg',
+    detail: 'high'
   }))
 
   const prompt = buildPrompt(images.length)
@@ -609,7 +610,8 @@ export class SpatialSession {
 
     const visionImages = images.map(img => ({
       data: img.data,
-      media_type: img.media_type || 'image/jpeg'
+      media_type: img.media_type || 'image/jpeg',
+      detail: 'high'
     }))
 
     const updatePrompt = buildUpdatePrompt(this.state, images.length)
