@@ -431,11 +431,11 @@ function ensembleMerge(runs) {
 
 // ── Single LLM call ──
 
-async function runOnce({ images, apiKey, model, baseUrl, proxyUrl, onProgress }) {
+async function runOnce({ images, apiKey, model, baseUrl, proxyUrl, provider: providerOverride, onProgress }) {
   const mdl = model || DEFAULT_MODEL
   const base = baseUrl || 'https://api.anthropic.com'
   const proxy = proxyUrl || undefined
-  const provider = base.includes('anthropic.com') ? 'anthropic' : 'openai'
+  const provider = providerOverride || (base.includes('anthropic.com') ? 'anthropic' : 'openai')
   const progress = onProgress || (() => {})
 
   const visionImages = images.map(img => ({
@@ -470,7 +470,7 @@ async function runOnce({ images, apiKey, model, baseUrl, proxyUrl, onProgress })
 
 // ── Main Export ──
 
-export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUrl, ensemble, onProgress }) {
+export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUrl, provider, ensemble, onProgress }) {
   if (!images?.length) throw new Error('At least one image is required')
   if (!apiKey) throw new Error('API key is required')
 
@@ -488,7 +488,7 @@ export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUr
 
     const promises = Array.from({ length: ensembleRuns }, (_, i) =>
       runOnce({
-        images, apiKey, model, baseUrl, proxyUrl,
+        images, apiKey, model, baseUrl, proxyUrl, provider,
         onProgress: (step, data) => progress(`run${i}_${step}`, data)
       }).catch(err => {
         progress(`run${i}_error`, { error: err.message })
@@ -510,7 +510,7 @@ export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUr
   } else {
     // Single run
     progress('step1', { message: 'Analyzing and reconstructing scene...' })
-    scene = await runOnce({ images, apiKey, model, baseUrl, proxyUrl, onProgress: progress })
+    scene = await runOnce({ images, apiKey, model, baseUrl, proxyUrl, provider, onProgress: progress })
   }
 
   // Attach metadata
@@ -566,8 +566,8 @@ RULES:
 }
 
 export class SpatialSession {
-  constructor({ apiKey, model, baseUrl, proxyUrl, ensemble, onProgress }) {
-    this.config = { apiKey, model, baseUrl, proxyUrl, ensemble }
+  constructor({ apiKey, model, baseUrl, proxyUrl, provider, ensemble, onProgress }) {
+    this.config = { apiKey, model, baseUrl, proxyUrl, provider, ensemble }
     this.onProgress = onProgress || (() => {})
     this.state = null       // current scene
     this.frameCount = 0
@@ -599,11 +599,11 @@ export class SpatialSession {
     this.frameCount++
     const progress = this.onProgress
     const startTime = Date.now()
-    const { apiKey, model, baseUrl, proxyUrl } = this.config
+    const { apiKey, model, baseUrl, proxyUrl, provider: providerCfg } = this.config
     const mdl = model || DEFAULT_MODEL
     const base = baseUrl || 'https://api.anthropic.com'
     const proxy = proxyUrl || undefined
-    const provider = base.includes('anthropic.com') ? 'anthropic' : 'openai'
+    const provider = providerCfg || (base.includes('anthropic.com') ? 'anthropic' : 'openai')
 
     progress('update_start', { frame: this.frameCount, imageCount: images.length })
 
