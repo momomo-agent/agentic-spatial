@@ -3,8 +3,8 @@
 // v7 soft-grid prompt + optional ensemble mode (3x parallel + merge)
 
 const IS_BROWSER = typeof window !== 'undefined'
-const AGENTIC_CORE_CDN = 'https://momomo-agent.github.io/agentic-core/agentic-agent.js'
-const AGENTIC_CORE_LOCAL = '../../agentic-core/docs/agentic-agent.js'
+const AGENTIC_CORE_CDN = 'https://cdn.jsdelivr.net/gh/momomo-agent/agentic-core@main/agentic-core.js'
+const AGENTIC_CORE_LOCAL = '../../agentic-core/agentic-core.js'
 
 const { agenticAsk } = await import(IS_BROWSER ? AGENTIC_CORE_CDN : AGENTIC_CORE_LOCAL)
 
