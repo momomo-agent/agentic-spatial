@@ -130,59 +130,63 @@ COORDINATE SYSTEM (normalized 0-1):
 - z: front/north(0) → back/south(1)
 - "north" = wall the first camera faces (z=0 side)
 
-THINK IN ZONES, PLACE PRECISELY:
+LAYERED RECONSTRUCTION — work top-down, each layer anchors the next:
 
-First, mentally divide the room into a 3×3 grid:
-  NW (left-front)    N (center-front)    NE (right-front)
-  W  (left-middle)   C (center-middle)   E  (right-middle)
-  SW (left-back)     S (center-back)     SE (right-back)
+━━━ LAYER 1: ROOM (absolute reference frame) ━━━
+Analyze the room itself first. This is your fixed coordinate system.
+- Shape, dimensions, walls with features
+- Divide into 3×3 grid zones: NW, N, NE, W, C, E, SW, S, SE
+- Output room.grid describing what occupies each zone
 
-Output room.grid describing what occupies each zone. This is your spatial map — use it to stay consistent.
+━━━ LAYER 2: ANCHORS (fixed objects, 2-4) ━━━
+Large immovable objects that define the spatial skeleton. Position them relative to the ROOM.
+- id: anchor_{type}_{zone}, type: table|board|door|cabinet|screen
+- These don't move — their positions are ground truth for everything else
+- x, y, z, width, depth: 0-1, confidence: ~1.0, seenIn: [indices]
 
-RECONSTRUCTION ORDER:
+━━━ LAYER 3: OBJECTS (relative to anchors) ━━━
+Smaller items. Position each relative to its nearest ANCHOR.
+- id: {type}_{zone}_{number}, anchorRef: nearest anchor id
+- Think: "this laptop is on the LEFT side of anchor_table_C, about 30% from the table edge"
+- x, y, z, width, depth: 0-1, confidence: 0-1, seenIn: [indices]
 
-1. ANCHORS (2-4): The largest objects. Each needs:
-   - id: anchor_{type}_{zone} (e.g. anchor_table_C, anchor_whiteboard_N)
-   - name, type (table|board|door|cabinet|screen), zone
-   - x, y, z, width, depth: 0-1
-   - color: hex, confidence: 1.0, seenIn: [indices]
+━━━ LAYER 4: PEOPLE (relative to anchors + objects) ━━━
+Count people using a SYSTEMATIC SCAN — go image by image, zone by zone:
+1. For each image: scan NW→N→NE→W→C→E→SW→S→SE
+2. In each zone: count heads, shoulders, hands, even partial bodies at edges
+3. Cross-reference across images: same person seen from different angles = same ID
+4. Final tally: list every unique person with their zone
 
-2. OBJECTS: Non-anchor items. Each needs:
-   - id: {type}_{zone}_{number} (e.g. laptop_N_1, chair_SW_2)
-   - name, type (furniture|electronics|decoration|appliance), zone
-   - anchorRef: nearest anchor id
-   - x, y, z, width, depth: 0-1
-   - color: hex, confidence: 0-1, seenIn: [indices]
+PEOPLE COUNTING CHECKLIST:
+□ Did I check all 9 zones in every image?
+□ Did I check edges and partially visible people?
+□ Did I check behind large objects where someone might be partially occluded?
+□ Did I cross-reference across camera angles?
 
-3. PEOPLE: Each needs:
-   - id: person_{zone}_{number} (e.g. person_N_1, person_S_3)
-   - zone, anchorRef
-   - x, y, z: 0-1
-   - gazeDegrees, gazeTarget, clothing, pose (sitting|standing|leaning), seenIn
-   - lookingAtCamera: which camera index (0-based) the person is directly looking at. Judge by their eye/face direction in the photo — if they are facing toward the camera position, set the camera index. Set -1 if they are not looking at any camera.
-   - emotion: detected emotional state from facial expression and body language (neutral|happy|focused|bored|confused|surprised|anxious|sad|angry|excited|contemplative)
-   - emotionConfidence: 0-1 how confident you are in the emotion reading
-   - activity: what this person is actively doing (typing|reading|talking|listening|presenting|writing|watching|walking|eating|phone_use|vr_use|idle)
-   - interactingWith: [person ids] — other people this person is directly interacting with (face-to-face conversation, collaborative work, etc.)
+Each person needs:
+- id: person_{zone}_{number}, zone, anchorRef
+- x, y, z: 0-1 (position relative to nearest anchor)
+- gazeDegrees, gazeTarget, clothing, pose (sitting|standing|leaning), seenIn
+- lookingAtCamera: camera index if facing camera, -1 otherwise
+- emotion: neutral|happy|focused|bored|confused|surprised|anxious|sad|angry|excited|contemplative
+- emotionConfidence: 0-1
+- activity: typing|reading|talking|listening|presenting|writing|watching|walking|eating|phone_use|vr_use|idle
+- interactingWith: [person ids]
+
+━━━ LAYER 5: BEHAVIORS (emergent from people + objects) ━━━
+What's happening? Infer from people positions, gaze, activity.
+- type: meeting|presenting|solo_work|conversation|idle|moving|aware_of_camera
+- participants: [person ids], focus: anchor/object id, description
+
+━━━ LAYER 6: ATTENTION + COVERAGE ━━━
+- ATTENTION MAP: object/anchor → [person ids looking at it]
+- COVERAGE: per camera: visiblePeople, occludedPeople, blindSpots
 
 RELATIONS: Spatial strings referencing zones/anchors.
 CAMERAS: index, estimatedPosition {x, z}, fovDegrees.
 
-4. BEHAVIORS: High-level activity recognition. Each behavior:
-   - type: meeting|presenting|solo_work|conversation|idle|moving|aware_of_camera
-   - participants: [person ids involved]
-   - focus: anchor/object id that is the activity's focal point (if any)
-   - description: one-line natural language description
-
-5. ATTENTION MAP: Object/anchor → who's looking at it.
-   Map each object that someone is gazing at to the list of person ids.
-
-6. COVERAGE: Camera visibility analysis.
-   - For each camera: which people are visible (visiblePeople) vs occluded by objects/other people (occludedPeople)
-   - blindSpots: areas of the room not covered by any camera
-
 RULES:
-- PEOPLE COUNT IS CRITICAL: Look at EVERY region of every image. Count heads, shoulders, hands — even partially visible people at edges, behind objects, or in shadows. Missing a person is worse than a false positive.
+- PEOPLE COUNT IS CRITICAL. Missing a person is worse than a false positive. Use the systematic scan above.
 - Zone is a LABEL for reasoning, not a hard coordinate constraint. Place items where they actually are.
 - IDs use zone labels for determinism: same object in same zone = same ID every time.
 - SPREAD people: ≥0.05 separation.
