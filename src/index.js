@@ -6,7 +6,8 @@ const IS_BROWSER = typeof window !== 'undefined'
 const AGENTIC_CORE_CDN = 'https://cdn.jsdelivr.net/gh/momomo-agent/agentic-core@main/agentic-core.js'
 const AGENTIC_CORE_LOCAL = '../../agentic-core/agentic-core.js'
 
-const { agenticAsk } = await import(IS_BROWSER ? AGENTIC_CORE_CDN : AGENTIC_CORE_LOCAL)
+const _mod = await import(IS_BROWSER ? AGENTIC_CORE_CDN : AGENTIC_CORE_LOCAL)
+const { agenticAsk } = _mod.default || _mod
 
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514'
 
