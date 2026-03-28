@@ -34,7 +34,21 @@ const SCENE_SCHEMA = {
         estimatedDepth: { type: 'number' }
       }
     },
-    anchors: { type: 'array' },
+    anchors: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'name', 'x', 'y', 'z'],
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string' },
+          type: { type: 'string' },
+          x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' },
+          width: { type: 'number' }, depth: { type: 'number' },
+          facingDegrees: { type: 'number', description: '0-360, 0=north(z=0), 90=east(x=1), 180=south(z=1), 270=west(x=0)' }
+        }
+      }
+    },
     objects: {
       type: 'array',
       items: {
@@ -48,6 +62,9 @@ const SCENE_SCHEMA = {
           anchorRef: { type: 'string' },
           x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' },
           width: { type: 'number' }, depth: { type: 'number' },
+          facingDegrees: { type: 'number', description: '0-360, 0=north(z=0), 90=east(x=1), 180=south(z=1), 270=west(x=0)' },
+          color: { type: 'string' },
+          confidence: { type: 'number' },
           seenIn: { type: 'array', items: { type: 'number' } }
         }
       }
