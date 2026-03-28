@@ -6,8 +6,16 @@ const IS_BROWSER = typeof window !== 'undefined'
 const AGENTIC_CORE_CDN = 'https://cdn.jsdelivr.net/gh/momomo-agent/agentic-core@main/agentic-core.js'
 const AGENTIC_CORE_LOCAL = '../../agentic-core/agentic-core.js'
 
-const _mod = await import(IS_BROWSER ? AGENTIC_CORE_CDN : AGENTIC_CORE_LOCAL)
-const { agenticAsk } = _mod.default || _mod
+let agenticAsk
+if (IS_BROWSER) {
+  // In browser, agentic-core is UMD and exports to window
+  await import(AGENTIC_CORE_CDN)
+  agenticAsk = window.agenticAsk
+  if (!agenticAsk) throw new Error('agenticAsk not found in window after loading agentic-core')
+} else {
+  const _mod = await import(AGENTIC_CORE_LOCAL)
+  agenticAsk = (_mod.default || _mod).agenticAsk
+}
 
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514'
 
@@ -122,8 +130,8 @@ const SCENE_SCHEMA = {
 
 // ── v7 Soft Grid + Anchor Prompt ──
 
-function buildPrompt(imageCount) {
-  return `${imageCount} photos, same room, different angles. Reconstruct as JSON.
+function buildPrompt(imageCount, sensorHints) {
+  let prompt = `${imageCount} photos, same room, different angles. Reconstruct as JSON.
 
 Coords 0-1: x:left→right, y:floor→ceiling, z:north(cam0)→south.
 
@@ -132,6 +140,12 @@ room → anchors (fixed: tables,screens,doors. Doors MUST be near walls x/z<0.15
 PEOPLE: Scan each image left-to-right. Count every head/shoulder/hand visible. Match same person across angles by clothing+position. List EVERY unique individual. Don't miss anyone partially hidden behind laptops or at table edges.
 
 IDs: anchor_{type}_{zone}, {type}_{zone}_{n}, person_{zone}_{n}. People ≥0.05 apart.`
+
+  if (sensorHints) {
+    prompt += `\n\nSENSOR DATA (from device face-detection, use as constraints for people positions and gaze):\n${sensorHints}`
+  }
+
+  return prompt
 }
 
 // ── Post-processing ──
@@ -375,7 +389,7 @@ function ensembleMerge(runs) {
 
 // ── Single LLM call ──
 
-async function runOnce({ images, apiKey, model, baseUrl, proxyUrl, provider: providerOverride, onProgress }) {
+async function runOnce({ images, apiKey, model, baseUrl, proxyUrl, provider: providerOverride, onProgress, sensorHints }) {
   const mdl = model || DEFAULT_MODEL
   const base = baseUrl || 'https://api.anthropic.com'
   const proxy = proxyUrl || undefined
@@ -388,7 +402,7 @@ async function runOnce({ images, apiKey, model, baseUrl, proxyUrl, provider: pro
     detail: 'high'
   }))
 
-  const prompt = buildPrompt(images.length)
+  const prompt = buildPrompt(images.length, sensorHints)
   const schemaStr = JSON.stringify(SCENE_SCHEMA, null, 2)
 
   const result = await agenticAsk(
@@ -415,7 +429,7 @@ async function runOnce({ images, apiKey, model, baseUrl, proxyUrl, provider: pro
 
 // ── Main Export ──
 
-export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUrl, provider, ensemble, onProgress }) {
+export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUrl, provider, ensemble, onProgress, sensorHints }) {
   if (!images?.length) throw new Error('At least one image is required')
   if (!apiKey) throw new Error('API key is required')
 
@@ -433,7 +447,7 @@ export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUr
 
     const promises = Array.from({ length: ensembleRuns }, (_, i) =>
       runOnce({
-        images, apiKey, model, baseUrl, proxyUrl, provider,
+        images, apiKey, model, baseUrl, proxyUrl, provider, sensorHints,
         onProgress: (step, data) => progress(`run${i}_${step}`, data)
       }).catch(err => {
         progress(`run${i}_error`, { error: err.message })
@@ -455,7 +469,7 @@ export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUr
   } else {
     // Single run
     progress('step1', { message: 'Analyzing and reconstructing scene...' })
-    scene = await runOnce({ images, apiKey, model, baseUrl, proxyUrl, provider, onProgress: progress })
+    scene = await runOnce({ images, apiKey, model, baseUrl, proxyUrl, provider, sensorHints, onProgress: progress })
   }
 
   // Attach metadata
@@ -473,7 +487,7 @@ export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUr
 
 // ── Continuous Mode: SpatialSession ──
 
-function buildUpdatePrompt(prevScene, imageCount) {
+function buildUpdatePrompt(prevScene, imageCount, sensorHints) {
   const prevSummary = JSON.stringify({
     room: prevScene.room,
     anchors: (prevScene.anchors || []).map(a => ({ id: a.id, x: a.x, z: a.z })),
@@ -482,7 +496,7 @@ function buildUpdatePrompt(prevScene, imageCount) {
     behaviors: prevScene.behaviors || []
   })
 
-  return `You are analyzing ${imageCount} NEW photo(s) of the SAME room you analyzed before.
+  const base = `You are analyzing ${imageCount} NEW photo(s) of the SAME room you analyzed before.
 
 PREVIOUS STATE (your last analysis):
 ${prevSummary}
@@ -508,6 +522,11 @@ RULES:
 - Coordinates: normalized 0-1. x: left→right, y: floor→ceiling, z: front→back.
 - Include ALL standard fields: room, anchors, objects, people, relations, cameras, behaviors, attentionMap, coverage.
 - Add "changes" array at top level.`
+
+  if (sensorHints) {
+    return base + `\n\nSENSOR DATA (from device face-detection, use as constraints for people positions and gaze):\n${sensorHints}`
+  }
+  return base
 }
 
 export class SpatialSession {
@@ -520,11 +539,12 @@ export class SpatialSession {
   }
 
   // First analysis or full reset
-  async analyze(images) {
+  async analyze(images, { sensorHints } = {}) {
     this.frameCount++
     const scene = await reconstructSpace({
       ...this.config,
       images,
+      sensorHints,
       onProgress: this.onProgress
     })
     this.state = scene
@@ -538,8 +558,8 @@ export class SpatialSession {
   }
 
   // Incremental update with new photos
-  async update(images) {
-    if (!this.state) return this.analyze(images)
+  async update(images, { sensorHints } = {}) {
+    if (!this.state) return this.analyze(images, { sensorHints })
 
     this.frameCount++
     const progress = this.onProgress
@@ -558,7 +578,7 @@ export class SpatialSession {
       detail: 'high'
     }))
 
-    const updatePrompt = buildUpdatePrompt(this.state, images.length)
+    const updatePrompt = buildUpdatePrompt(this.state, images.length, sensorHints)
     const schemaWithChanges = {
       ...SCENE_SCHEMA,
       properties: {

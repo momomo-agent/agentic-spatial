@@ -6,8 +6,16 @@ const IS_BROWSER = typeof window !== 'undefined'
 const AGENTIC_CORE_CDN = 'https://cdn.jsdelivr.net/gh/momomo-agent/agentic-core@main/agentic-core.js'
 const AGENTIC_CORE_LOCAL = '../../agentic-core/agentic-core.js'
 
-const _mod = await import(IS_BROWSER ? AGENTIC_CORE_CDN : AGENTIC_CORE_LOCAL)
-const { agenticAsk } = _mod.default || _mod
+let agenticAsk
+if (IS_BROWSER) {
+  // In browser, agentic-core is UMD and exports to window
+  await import(AGENTIC_CORE_CDN)
+  agenticAsk = window.agenticAsk
+  if (!agenticAsk) throw new Error('agenticAsk not found in window after loading agentic-core')
+} else {
+  const _mod = await import(AGENTIC_CORE_LOCAL)
+  agenticAsk = (_mod.default || _mod).agenticAsk
+}
 
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514'
 
