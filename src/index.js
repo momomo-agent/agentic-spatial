@@ -23,27 +23,15 @@ const DEFAULT_MODEL = 'claude-sonnet-4-20250514'
 
 const SCENE_SCHEMA = {
   type: 'object',
-  required: ['room', 'anchors', 'objects', 'people', 'relations', 'cameras'],
+  required: ['room', 'anchors', 'objects', 'people', 'cameras'],
   properties: {
     room: {
       type: 'object',
-      required: ['shape', 'estimatedWidth', 'estimatedDepth', 'walls', 'grid'],
+      required: ['shape', 'estimatedWidth', 'estimatedDepth'],
       properties: {
         shape: { type: 'string' },
         estimatedWidth: { type: 'number' },
-        estimatedDepth: { type: 'number' },
-        walls: {
-          type: 'array',
-          items: {
-            type: 'object',
-            required: ['side', 'features'],
-            properties: {
-              side: { type: 'string' },
-              features: { type: 'string' }
-            }
-          }
-        },
-        grid: { type: 'object' }
+        estimatedDepth: { type: 'number' }
       }
     },
     anchors: { type: 'array' },
@@ -60,8 +48,6 @@ const SCENE_SCHEMA = {
           anchorRef: { type: 'string' },
           x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' },
           width: { type: 'number' }, depth: { type: 'number' },
-          color: { type: 'string' },
-          confidence: { type: 'number' },
           seenIn: { type: 'array', items: { type: 'number' } }
         }
       }
@@ -82,14 +68,12 @@ const SCENE_SCHEMA = {
           clothing: { type: 'string' },
           pose: { type: 'string', enum: ['sitting', 'standing', 'leaning'] },
           emotion: { type: 'string', description: 'Detected emotional state: neutral|happy|focused|bored|confused|surprised|anxious|sad|angry|excited|contemplative' },
-          emotionConfidence: { type: 'number', description: '0-1 confidence in emotion detection' },
           activity: { type: 'string', description: 'What this person is doing: typing|reading|talking|listening|presenting|writing|watching|walking|eating|phone_use|vr_use|idle' },
           interactingWith: { type: 'array', items: { type: 'string' }, description: 'IDs of other people this person is interacting with' },
           seenIn: { type: 'array', items: { type: 'number' } }
         }
       }
     },
-    relations: { type: 'array', items: { type: 'string' } },
     cameras: { type: 'array' },
     behaviors: {
       type: 'array',
@@ -395,7 +379,7 @@ function ensembleMerge(runs) {
     if (typeof rel === 'string') relSet.add(rel)
   }))
 
-  return { room, anchors, objects, people, relations: [...relSet], cameras }
+  return { room, anchors, objects, people, cameras }
 }
 
 // ── Single LLM call ──
