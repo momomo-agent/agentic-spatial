@@ -493,6 +493,14 @@ export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUr
     elapsedMs: Date.now() - startTime
   }
 
+  // Attach deviceId to cameras based on image index
+  if (scene.cameras && images) {
+    scene.cameras = scene.cameras.map(cam => ({
+      ...cam,
+      deviceId: images[cam.index]?.deviceId
+    }))
+  }
+
   progress('done', { scene })
   return scene
 }
