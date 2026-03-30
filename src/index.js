@@ -506,10 +506,15 @@ export async function reconstructSpace({ images, apiKey, model, baseUrl, proxyUr
 
   // Attach deviceId to cameras based on image index
   if (scene.cameras && images) {
-    scene.cameras = scene.cameras.map(cam => ({
-      ...cam,
-      deviceId: images[cam.index]?.deviceId
-    }))
+    console.log('[agentic-spatial] Attaching deviceId to cameras. Images:', images.map(img => ({ index: images.indexOf(img), deviceId: img.deviceId, name: img.name })))
+    scene.cameras = scene.cameras.map(cam => {
+      const deviceId = images[cam.index]?.deviceId
+      console.log(`[agentic-spatial] Camera index=${cam.index}, deviceId=${deviceId}`)
+      return {
+        ...cam,
+        deviceId
+      }
+    })
   }
 
   progress('done', { scene })
