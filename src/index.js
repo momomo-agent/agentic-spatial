@@ -142,7 +142,7 @@ const SCENE_SCHEMA = {
 
 // ── v7 Soft Grid + Anchor Prompt ──
 
-function buildPrompt(imageCount, sensorHints) {
+function buildPrompt(imageCount, sensorHints, images) {
   let prompt = `${imageCount} photos, same room, different angles. Reconstruct as JSON.
 
 Coords 0-1: x:left→right, y:floor→ceiling, z:north(cam0)→south.
@@ -152,6 +152,16 @@ room → anchors (fixed: tables,screens,doors. Doors MUST be near walls x/z<0.15
 PEOPLE: Scan each image left-to-right. Count every head/shoulder/hand visible. Match same person across angles by clothing+position. List EVERY unique individual. Don't miss anyone partially hidden behind laptops or at table edges.
 
 IDs: anchor_{type}_{zone}, {type}_{zone}_{n}, person_{zone}_{n}. People ≥0.05 apart.`
+
+  // Add device mapping
+  if (images && images.length > 0) {
+    prompt += `\n\nIMAGE-DEVICE MAPPING (use deviceId in cameras array):`
+    images.forEach((img, idx) => {
+      if (img.deviceId) {
+        prompt += `\n- Image ${idx}: deviceId="${img.deviceId}" (${img.name || 'unknown'})`
+      }
+    })
+  }
 
   if (sensorHints) {
     prompt += `\n\nSENSOR DATA (from device face-detection, use as constraints for people positions and gaze):\n${sensorHints}`
@@ -414,7 +424,7 @@ async function runOnce({ images, apiKey, model, baseUrl, proxyUrl, provider: pro
     detail: 'high'
   }))
 
-  const prompt = buildPrompt(images.length, sensorHints)
+  const prompt = buildPrompt(images.length, sensorHints, images)
   const schemaStr = JSON.stringify(SCENE_SCHEMA, null, 2)
 
   const result = await agenticAsk(
