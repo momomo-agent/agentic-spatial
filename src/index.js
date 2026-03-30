@@ -391,9 +391,10 @@ function ensembleMerge(runs) {
     if (cams.length >= QUORUM) {
       cameras.push({
         index: i,
-        estimatedPosition: {
-          x: +median(cams.map(c => c.estimatedPosition?.x || 0)).toFixed(2),
-          z: +median(cams.map(c => c.estimatedPosition?.z || 0)).toFixed(2)
+        position: {
+          x: +median(cams.map(c => c.position?.x || c.estimatedPosition?.x || 0)).toFixed(2),
+          z: +median(cams.map(c => c.position?.z || c.estimatedPosition?.z || 0)).toFixed(2),
+          facingDegrees: +median(cams.map(c => c.position?.facingDegrees || c.facingDegrees || 0)).toFixed(0)
         },
         fovDegrees: +median(cams.map(c => c.fovDegrees || 60)).toFixed(0)
       })
