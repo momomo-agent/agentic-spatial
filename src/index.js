@@ -115,8 +115,19 @@ const SCENE_SCHEMA = {
           type: 'array',
           items: {
             type: 'object',
+            required: ['index', 'position'],
             properties: {
               index: { type: 'number' },
+              position: {
+                type: 'object',
+                required: ['x', 'y', 'z', 'facingDegrees'],
+                properties: {
+                  x: { type: 'number', description: '0-1, left to right' },
+                  y: { type: 'number', description: '0-1, floor to ceiling' },
+                  z: { type: 'number', description: '0-1, north (cam0) to south' },
+                  facingDegrees: { type: 'number', description: '0-360, 0=north, 90=east, 180=south, 270=west' }
+                }
+              },
               visiblePeople: { type: 'array', items: { type: 'string' } },
               occludedPeople: { type: 'array', items: { type: 'string' } }
             }
