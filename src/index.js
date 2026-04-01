@@ -149,7 +149,16 @@ Coords 0-1: x:left→right, y:floor→ceiling, z:north(cam0)→south.
 
 room → anchors (fixed: tables,screens,doors. Doors MUST be near walls x/z<0.15 or>0.85) → cameras (1 per image) → objects (relative to anchors, on table: y≈table.y+0.06) → people → behaviors → relations → attentionMap → coverage.
 
-PEOPLE: Scan each image left-to-right. Count every head/shoulder/hand visible. Match same person across angles by clothing+position. List EVERY unique individual. Don't miss anyone partially hidden behind laptops or at table edges.
+CRITICAL - PEOPLE DETECTION: This is the MOST IMPORTANT part. Carefully examine EACH image:
+1. Scan systematically left-to-right, top-to-bottom
+2. Look for ANY visible human features: heads, faces, shoulders, arms, hands, torsos, legs
+3. Count EVERY person, even if partially visible or occluded by objects (laptops, monitors, furniture)
+4. People sitting at tables are ALWAYS present - look carefully at each seat position
+5. Match the same person across different camera angles using clothing color/style and approximate position
+6. If sensor data reports N faces, you MUST find at least N people in the images
+7. List EVERY unique individual with their position, pose, activity, and what they're looking at
+
+DO NOT output an empty people array unless the room is genuinely empty. Multiple people in a room is the NORMAL case.
 
 IDs: anchor_{type}_{zone}, {type}_{zone}_{n}, person_{zone}_{n}. People ≥0.05 apart.`
 
@@ -419,6 +428,14 @@ async function runOnce({ images, apiKey, model, baseUrl, proxyUrl, provider: pro
   const provider = providerOverride || (base.includes('anthropic.com') ? 'anthropic' : 'openai')
   const progress = onProgress || (() => {})
 
+  // Debug: log image data sizes
+  console.log('[agentic-spatial] Processing images:', images.map((img, i) => ({
+    index: i,
+    hasData: !!img.data,
+    dataLength: img.data?.length || 0,
+    dataPrefix: img.data?.substring(0, 50)
+  })))
+
   const visionImages = images.map(img => ({
     data: img.data,
     media_type: img.media_type || 'image/jpeg',
@@ -550,6 +567,12 @@ CHANGE DETECTION — also include a "changes" array describing what changed:
 - "behavior_changed": group behavior type changed
 
 Each change entry: { type, id, description, from, to }
+
+CRITICAL - PEOPLE DETECTION: Carefully examine ALL new photos for people:
+- If sensor data reports N faces, you MUST find at least N people
+- Look for heads, shoulders, arms, hands - even if partially occluded
+- People sitting at desks/tables are common - check each seat position
+- DO NOT report 0 people unless the room is genuinely empty
 
 RULES:
 - Keep IDs STABLE: if person_N_1 was at (0.3, 0.2) and someone is still near there, keep the same ID.
